@@ -1,0 +1,9 @@
+{
+  "large_market_actual_mean": 1.2571428571428571,
+  "small_market_actual_mean": 0.9236276849642004,
+  "large_market_pred_mean": 1.3047619047619048,
+  "small_market_pred_mean": 0.9880668257756563,
+  "large_market_error_mean": 0.5333333333333333,
+  "small_market_error_mean": 0.47494033412887826,
+  "error_gap": 0.058392999204455065
+}
