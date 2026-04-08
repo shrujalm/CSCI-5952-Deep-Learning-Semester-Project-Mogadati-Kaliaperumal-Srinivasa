@@ -103,14 +103,6 @@ python run_research_study.py --epochs-mlp 150 --epochs-attention 200 --lr 0.001 
 - Metrics and tables: `results/research_study/`
 - Processed dataset: `data/processed/features_research.csv`
 
-## Limitations
-
-The repository is now in much better shape, but a few methodological limitations still matter:
-
-1. The task is highly imbalanced, with only one champion and one finals loser per season.
-2. The current study uses full regular-season statistics rather than a strict mid-season cutoff.
-3. The sample size is still modest for a six-class forecasting problem.
-4. Contextual features are better than before, but still relatively simple compared with what a production sports-analytics system would use.
 
 ## Recommendation
 
