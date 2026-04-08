@@ -1,231 +1,117 @@
-# NBA Championship Prediction Using Deep Learning
+# NBA Championship Prediction with Deep Learning
 
-Implementation of the project proposal for CSCI 5931 Deep Learning, Spring 2026.
+This repository studies whether NBA postseason outcomes can be predicted from regular-season team statistics, contextual roster features, and the top eight players in each team's rotation. The codebase has been reorganized into a coherent `src/` package, the historical playoff labels are now versioned in code, and the repo includes a research-grade results report generated from a real multi-season experiment.
 
-**Team Members:** Shrujal Mogadati, Pranav Kaliaperumal, Disha Srinivasa
+## Current Status
 
----
+- Real-data experiment completed on 21 seasons from 2003-04 through 2023-24.
+- Curated playoff labels are bundled in code.
+- A full report is available at `docs/final_report.md`.
+- Structured outputs are available under `results/research_study/`.
+- The processed feature matrix is saved at `data/processed/features_research.csv`.
 
-## Project Overview
+## High-Level Findings
 
-This project predicts NBA championship contenders from mid-season (All-Star break) team snapshots using deep learning. Given team and player statistics at the halfway point of the season (~50 games), the model classifies each team into one of six playoff outcomes:
+From the current leave-one-season-out cross-validation run over 629 team-seasons:
 
-| Class | Outcome |
-|-------|---------|
-| 0 | Missed Playoffs |
-| 1 | First Round Exit |
-| 2 | Second Round Exit |
-| 3 | Conference Finals |
-| 4 | Finals Appearance |
-| 5 | Champion |
+- Random Forest achieved the best overall accuracy: 68.0%
+- MLP Baseline achieved the best macro F1: 40.8%
+- Attention Model achieved 65.3% accuracy and 39.3% macro F1
+- Top-2 accuracy was above 81% for every model and peaked at 84.3% for Random Forest
 
----
+The attention model remains valuable because it is competitive while also exposing player-importance weights that support interpretability.
 
-## Repository Structure
+## Repository Layout
 
-```
+```text
 .
-├── models.py              # Neural network architectures (AttentionModel, MLPBaseline)
-├── train.py               # Training pipeline with cross-validation
-├── data_collection.py     # Data collection from nba_api
-├── interpretability.py    # Attention visualization and t-SNE analysis
-├── main.py                # Main entry point for full pipeline
-├── requirements.txt       # Python dependencies
-└── README.md             # This file
+|-- data/
+|   `-- processed/
+|       `-- features_research.csv
+|-- docs/
+|   |-- final_report.md
+|   |-- figures/
+|   `-- nba_championship_prediction_proposal.pdf
+|-- notebooks/
+|   `-- championship_prediction_experiments.ipynb
+|-- results/
+|   `-- research_study/
+|-- src/
+|   `-- nba_championship_prediction/
+|       |-- __init__.py
+|       |-- cli.py
+|       |-- data_pipeline.py
+|       |-- historical_labels.py
+|       |-- interpretability.py
+|       |-- modeling.py
+|       |-- research_study.py
+|       `-- training.py
+|-- .gitignore
+|-- requirements.txt
+|-- run_pipeline.py
+`-- run_research_study.py
 ```
 
----
+## Research Workflow
 
-## Model Architecture
+### Data and labels
 
-### AttentionModel (Main Model)
+The repo now combines:
 
-As described in the proposal, the model has three main components:
+- `nba_api` regular-season team and player statistics
+- advanced team efficiency metrics from `TeamEstimatedMetrics`
+- curated postseason outcomes for every season from 2003-04 through 2023-24
+- contextual features including conference strength and roster continuity
 
-1. **Player Embedding Network**: Shared subnetwork that compresses each player's stats into a compact embedding
-2. **Attention Pooling**: Learns which players matter most for championship contention
-3. **Classifier**: Combines team stats with the attention-pooled player summary for final prediction
+### Models
 
-```
-Player 1 stats → [Embedding Net] → emb1 \
-Player 2 stats → [Embedding Net] → emb2  |→ [Attention] → team_player_summary
-...                                        |                        |
-Player 8 stats → [Embedding Net] → emb8 /                         v
-                                                                   
-Team stats ------------------------------------------------> [Combine] → [FC Layers] → Prediction
-```
+The study compares four models:
 
-### MLPBaseline (Comparison Baseline)
-
-A plain neural network without player embeddings, used as a baseline for comparison.
-
----
-
-## Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd nba-championship-prediction
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Dependencies
-
-- torch >= 2.0.0
-- numpy >= 1.24.0
-- pandas >= 2.0.0
-- scikit-learn >= 1.3.0
-- matplotlib >= 3.7.0
-- nba_api >= 1.4.0 (optional, for real data collection)
-
----
-
-## Usage
-
-### Full Pipeline
-
-Run the complete pipeline (data collection → training → evaluation → interpretability):
-
-```bash
-python main.py --mode full --seasons 20 --epochs 50
-```
-
-### Individual Steps
-
-**1. Data Collection only:**
-```bash
-python main.py --mode data --seasons 20
-```
-
-**2. Training only:**
-```bash
-python main.py --mode train --epochs 50 --lr 0.001
-```
-
-**3. Cross-Validation Evaluation:**
-```bash
-python main.py --mode evaluate
-```
-
-**4. Interpretability Analysis:**
-```bash
-python main.py --mode interpret
-```
-
-### Command-Line Arguments
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--mode` | `full` | Pipeline mode: full, data, train, evaluate, interpret |
-| `--seasons` | 20 | Number of seasons to include |
-| `--epochs` | 50 | Training epochs |
-| `--batch_size` | 32 | Batch size |
-| `--lr` | 0.001 | Learning rate |
-| `--embedding_size` | 32 | Player embedding dimension |
-| `--hidden_size` | 128 | Hidden layer size |
-| `--dropout` | 0.3 | Dropout rate |
-| `--output_dir` | `outputs` | Output directory |
-
----
-
-## Features
-
-### Team-Level Features (~15)
-
-- Wins, losses, win percentage
-- Offensive/defensive/net rating
-- Pace
-- Effective field goal percentage (eFG%)
-- True shooting percentage (TS%)
-- Offensive/defensive rebound percentage
-- Assist ratio
-- Turnover percentage
-- Strength of schedule
-
-### Player-Level Features (~10 per player)
-
-- Points, rebounds, assists
-- Field goal percentage (FG%)
-- Three-point percentage (3P%)
-- Free throw percentage (FT%)
-- Minutes played
-- Plus/minus
-- Player efficiency (fantasy points)
-- Effective field goal percentage
-
-### Contextual Features
-
-- Roster continuity
-- Conference strength
-
----
-
-## Training
-
-### Loss Function
-
-Cross-entropy loss with class weights to handle class imbalance (only 1 champion per year vs many teams missing playoffs).
+1. Logistic Regression
+2. Random Forest
+3. MLP Baseline
+4. Attention Model
 
 ### Evaluation
 
-**Leave-one-season-out cross-validation**: The model is trained on all seasons except one, then tested on the held-out season. This ensures the model never sees "future" data.
+The main experiment uses leave-one-season-out cross-validation, which tests each model on one held-out season at a time and aggregates the out-of-fold predictions across the full historical sample.
 
-### Metrics
+## Running the Code
 
-- **Accuracy**: Overall classification accuracy
-- **F1 Score**: Weighted F1 score for imbalanced classes
-- **Top-2 Accuracy**: Did the model rank the actual champion in its top 2 predictions?
+Install dependencies:
 
----
+```bash
+python -m pip install -r requirements.txt
+```
 
-## Interpretability
+Run the lightweight package pipeline:
 
-### Attention Weight Visualization
+```bash
+python run_pipeline.py --mode full --seasons 5 --epochs 10
+```
 
-Shows which player positions the model considers most important for each playoff outcome. For example, does the model learn that "star players" matter more for championship contention?
+Run the full research study and regenerate the report:
 
-### t-SNE Embedding Visualization
+```bash
+python run_research_study.py --epochs-mlp 150 --epochs-attention 200 --lr 0.001 --seed 42
+```
 
-Projects the learned team embeddings into 2D space to visualize whether championship teams cluster together.
+## Main Artifacts
 
-### Champion Clustering Analysis
+- Report: `docs/final_report.md`
+- Figures: `docs/figures/`
+- Metrics and tables: `results/research_study/`
+- Processed dataset: `data/processed/features_research.csv`
 
-Quantifies whether champions form a distinct cluster in the embedding space by comparing:
-- Average distance between champions
-- Average distance from champions to non-champions
+## Limitations
 
----
+The repository is now in much better shape, but a few methodological limitations still matter:
 
-## Expected Results
+1. The task is highly imbalanced, with only one champion and one finals loser per season.
+2. The current study uses full regular-season statistics rather than a strict mid-season cutoff.
+3. The sample size is still modest for a six-class forecasting problem.
+4. Contextual features are better than before, but still relatively simple compared with what a production sports-analytics system would use.
 
-Based on related work:
-- **Accuracy**: 60-70% (6-class classification is challenging)
-- **Top-2 Accuracy**: 80-90% (model should reliably identify top contenders)
-- **Attention Model should outperform MLP Baseline** by capturing player importance
+## Recommendation
 
----
-
-## Ethical Considerations
-
-As noted in the proposal:
-- The model uses only performance-based features (stats, records, ratings)
-- No demographic or personal information about players
-- Analysis includes checking for bias toward large-market vs small-market teams
-
----
-
-## References
-
-1. Khanmohammadi et al. (2024). MambaNet: A Hybrid Neural Network for Predicting the NBA Playoffs. SN Computer Science.
-2. Zhao et al. (2023). Enhancing Basketball Game Outcome Prediction through Fused Graph Convolutional Networks. Entropy.
-3. Guan et al. (2023). NBA2Vec: Dense Feature Representations of NBA Players. arXiv.
-4. Ouyang et al. (2024). Integration of Machine Learning XGBoost and SHAP Models for NBA Game Outcome Prediction. PLoS ONE.
-
----
-
-## License
-
-This project is for academic purposes (CSCI 5931 Deep Learning, Spring 2026).
+Use `README.md` as the repo overview and `docs/final_report.md` as the canonical research narrative. The notebook should now be treated as exploratory support material rather than the primary project deliverable.
