@@ -176,6 +176,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run_project.ps1 demo
 ```
 
+Presentation showcase with built-in talk cues and pauses:
+
+```powershell
+.\run_project.ps1 showcase
+```
+
+Optional unattended showcase run:
+
+```powershell
+.\run_project.ps1 showcase -NoPause
+```
+
 Optional syntax check on execution-policy-restricted hosts:
 
 ```powershell
