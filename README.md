@@ -167,6 +167,15 @@ That makes the repository valuable from both a research and recruiting perspecti
 
 ## Quick Start
 
+## One-Click Demo
+
+Windows PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\run_project.ps1 demo
+```
+
 ### 1. Install dependencies
 
 ```bash
@@ -189,6 +198,23 @@ This command regenerates the report and research artifacts:
 python run_research_study.py --epochs-mlp 150 --epochs-attention 200 --lr 0.001 --seed 42
 ```
 
+## Mid-Season Prediction Experiment
+
+This project includes two forecasting settings:
+
+1. Full regular-season prediction:
+   Uses full regular-season team and rotation-player statistics.
+
+2. Mid-season prediction:
+   Uses only statistics available around the All-Star break / mid-season cutoff to predict each team's final playoff outcome.
+
+Commands:
+
+```powershell
+.\run_project.ps1 midseason
+.\run_project.ps1 midseason-final
+```
+
 ## Precomputed Artifacts
 
 The repository already includes the main outputs from a completed real-data run, so reviewers do not need to rerun the full study to inspect the work.
@@ -197,6 +223,10 @@ The repository already includes the main outputs from a completed real-data run,
 - Figures: `docs/figures/`
 - Structured metrics and predictions: `results/research_study/`
 - Processed feature matrix: `data/processed/features_research.csv`
+- Mid-season feature matrix: `data/processed/features_midseason.csv`
+- Mid-season report: `docs/midseason_report.md`
+- Mid-season figures: `docs/figures_midseason/`
+- Mid-season metrics and predictions: `results/midseason_study/`
 - Cached raw source tables: `data/raw/`
 
 ## Reproducibility Notes
