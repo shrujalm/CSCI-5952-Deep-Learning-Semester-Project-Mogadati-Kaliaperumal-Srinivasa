@@ -77,7 +77,37 @@ PROCESSED_DATA_DIR = DATA_ROOT / "processed"
 RAW_TEAM_STATS_FILE = RAW_DATA_DIR / "team_stats_all_seasons.csv"
 RAW_ADVANCED_TEAM_STATS_FILE = RAW_DATA_DIR / "team_advanced_stats_all_seasons.csv"
 RAW_PLAYER_STATS_FILE = RAW_DATA_DIR / "player_stats_all_seasons.csv"
+RAW_MIDSEASON_TEAM_STATS_FILE = RAW_DATA_DIR / "midseason_team_stats_all_seasons.csv"
+RAW_MIDSEASON_ADVANCED_TEAM_STATS_FILE = RAW_DATA_DIR / "midseason_team_advanced_stats_all_seasons.csv"
+RAW_MIDSEASON_PLAYER_STATS_FILE = RAW_DATA_DIR / "midseason_player_stats_all_seasons.csv"
 PROCESSED_FEATURES_FILE = PROCESSED_DATA_DIR / "features_research.csv"
+PROCESSED_MIDSEASON_FEATURES_FILE = PROCESSED_DATA_DIR / "features_midseason.csv"
+
+# Approximate All-Star Sunday cutoffs used as a mid-season information boundary.
+# The 2020-21 season used a March All-Star Game because of the shortened COVID calendar.
+MIDSEASON_CUTOFF_DATES = {
+    "2003-04": "02/15/2004",
+    "2004-05": "02/20/2005",
+    "2005-06": "02/19/2006",
+    "2006-07": "02/18/2007",
+    "2007-08": "02/17/2008",
+    "2008-09": "02/15/2009",
+    "2009-10": "02/14/2010",
+    "2010-11": "02/20/2011",
+    "2011-12": "02/26/2012",
+    "2012-13": "02/17/2013",
+    "2013-14": "02/16/2014",
+    "2014-15": "02/15/2015",
+    "2015-16": "02/14/2016",
+    "2016-17": "02/19/2017",
+    "2017-18": "02/18/2018",
+    "2018-19": "02/17/2019",
+    "2019-20": "02/16/2020",
+    "2020-21": "03/07/2021",
+    "2021-22": "02/20/2022",
+    "2022-23": "02/19/2023",
+    "2023-24": "02/18/2024",
+}
 
 
 def _season_seed(season: str, offset: int = 0) -> int:
@@ -104,6 +134,70 @@ def _load_cached_csv(path: Path) -> pd.DataFrame | None:
     if path.exists():
         return pd.read_csv(path)
     return None
+
+
+def _cached_subset(
+    path: Path,
+    seasons: List[str],
+    force_refresh: bool = False,
+) -> pd.DataFrame | None:
+    if force_refresh:
+        return None
+
+    cached = _load_cached_csv(path)
+    if cached is None:
+        return None
+    if "SEASON" not in cached.columns:
+        return None
+    if not set(seasons).issubset(set(cached["SEASON"].astype(str).unique())):
+        return None
+    return cached[cached["SEASON"].isin(seasons)].copy()
+
+
+def _expected_feature_columns() -> list[str]:
+    player_columns = [
+        f"P{player_index}_{column}"
+        for player_index in range(1, NUM_ROTATION_PLAYERS + 1)
+        for column in PLAYER_FEATURE_BASE_COLUMNS
+    ]
+    return [
+        "SEASON",
+        "TEAM",
+        "TEAM_ID",
+        "PLAYOFF_RESULT",
+        "PLAYOFF_LABEL",
+        *TEAM_FEATURE_COLUMNS,
+        *player_columns,
+    ]
+
+
+def _normalize_advanced_team_stats(advanced_stats: pd.DataFrame) -> pd.DataFrame:
+    """Normalize advanced endpoint names to the estimated-metrics schema."""
+    advanced_stats = advanced_stats.copy()
+    rename_map = {
+        "OFF_RATING": "E_OFF_RATING",
+        "DEF_RATING": "E_DEF_RATING",
+        "NET_RATING": "E_NET_RATING",
+        "PACE": "E_PACE",
+    }
+    for source_column, target_column in rename_map.items():
+        if target_column not in advanced_stats.columns and source_column in advanced_stats.columns:
+            advanced_stats[target_column] = advanced_stats[source_column]
+
+    for column in ["E_OFF_RATING", "E_DEF_RATING", "E_NET_RATING", "E_PACE"]:
+        if column not in advanced_stats.columns:
+            advanced_stats[column] = 0.0
+
+    return advanced_stats
+
+
+def _validate_midseason_cutoffs(seasons: List[str]) -> None:
+    missing = [season for season in seasons if season not in MIDSEASON_CUTOFF_DATES]
+    if missing:
+        raise ValueError(
+            "Missing mid-season cutoff date(s) for: "
+            + ", ".join(missing)
+        )
 
 
 def download_basic_team_stats(
@@ -211,6 +305,129 @@ def download_player_stats(
     return player_stats
 
 
+def download_midseason_team_stats(
+    seasons: List[str],
+    raw_file: Path = RAW_MIDSEASON_TEAM_STATS_FILE,
+    timeout: int = 60,
+    sleep_seconds: float = 0.7,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Download or load cached team stats through each season's mid-season cutoff."""
+    cached = _cached_subset(raw_file, seasons, force_refresh=force_refresh)
+    if cached is not None:
+        return cached
+
+    if not NBA_API_AVAILABLE:
+        raise RuntimeError("nba_api is not installed and no cached mid-season team stats were found.")
+
+    _validate_midseason_cutoffs(seasons)
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    all_team_stats = []
+
+    for season in seasons:
+        cutoff = MIDSEASON_CUTOFF_DATES[season]
+        print(f"Fetching mid-season team stats for {season} through {cutoff}...")
+        stats = LeagueDashTeamStats(
+            season=season,
+            per_mode_detailed="PerGame",
+            season_type_all_star="Regular Season",
+            date_to_nullable=cutoff,
+            timeout=timeout,
+        )
+        season_df = stats.get_data_frames()[0]
+        season_df["SEASON"] = season
+        season_df["MIDSEASON_CUTOFF"] = cutoff
+        all_team_stats.append(season_df)
+        time.sleep(sleep_seconds)
+
+    team_stats = pd.concat(all_team_stats, ignore_index=True)
+    team_stats = _attach_team_abbreviations(team_stats)
+    team_stats.to_csv(raw_file, index=False)
+    return team_stats
+
+
+def download_midseason_advanced_team_stats(
+    seasons: List[str],
+    raw_file: Path = RAW_MIDSEASON_ADVANCED_TEAM_STATS_FILE,
+    timeout: int = 60,
+    sleep_seconds: float = 0.7,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Download or load cached advanced team stats through each mid-season cutoff."""
+    cached = _cached_subset(raw_file, seasons, force_refresh=force_refresh)
+    if cached is not None:
+        return _normalize_advanced_team_stats(cached)
+
+    if not NBA_API_AVAILABLE:
+        raise RuntimeError("nba_api is not installed and no cached mid-season advanced stats were found.")
+
+    _validate_midseason_cutoffs(seasons)
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    all_advanced_stats = []
+
+    for season in seasons:
+        cutoff = MIDSEASON_CUTOFF_DATES[season]
+        print(f"Fetching mid-season advanced team stats for {season} through {cutoff}...")
+        stats = LeagueDashTeamStats(
+            season=season,
+            per_mode_detailed="PerGame",
+            season_type_all_star="Regular Season",
+            measure_type_detailed_defense="Advanced",
+            date_to_nullable=cutoff,
+            timeout=timeout,
+        )
+        season_df = stats.get_data_frames()[0]
+        season_df["SEASON"] = season
+        season_df["MIDSEASON_CUTOFF"] = cutoff
+        all_advanced_stats.append(season_df)
+        time.sleep(sleep_seconds)
+
+    advanced_stats = pd.concat(all_advanced_stats, ignore_index=True)
+    advanced_stats = _normalize_advanced_team_stats(advanced_stats)
+    advanced_stats.to_csv(raw_file, index=False)
+    return advanced_stats
+
+
+def download_midseason_player_stats(
+    seasons: List[str],
+    raw_file: Path = RAW_MIDSEASON_PLAYER_STATS_FILE,
+    timeout: int = 60,
+    sleep_seconds: float = 0.7,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Download or load cached player stats through each season's mid-season cutoff."""
+    cached = _cached_subset(raw_file, seasons, force_refresh=force_refresh)
+    if cached is not None:
+        return cached
+
+    if not NBA_API_AVAILABLE:
+        raise RuntimeError("nba_api is not installed and no cached mid-season player stats were found.")
+
+    _validate_midseason_cutoffs(seasons)
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    all_player_stats = []
+
+    for season in seasons:
+        cutoff = MIDSEASON_CUTOFF_DATES[season]
+        print(f"Fetching mid-season player stats for {season} through {cutoff}...")
+        stats = LeagueDashPlayerStats(
+            season=season,
+            per_mode_detailed="PerGame",
+            season_type_all_star="Regular Season",
+            date_to_nullable=cutoff,
+            timeout=timeout,
+        )
+        season_df = stats.get_data_frames()[0]
+        season_df["SEASON"] = season
+        season_df["MIDSEASON_CUTOFF"] = cutoff
+        all_player_stats.append(season_df)
+        time.sleep(sleep_seconds)
+
+    player_stats = pd.concat(all_player_stats, ignore_index=True)
+    player_stats.to_csv(raw_file, index=False)
+    return player_stats
+
+
 def compute_approximate_per(player_row: pd.Series) -> float:
     """Approximate PER from box-score production per minute."""
     minutes = player_row.get("MIN", 0)
@@ -264,32 +481,17 @@ def compute_roster_continuity(
     return float(returning / len(current_players))
 
 
-def build_real_dataset(
+def _build_feature_matrix_from_stats(
     seasons: List[str],
-    top_n_players: int = NUM_ROTATION_PLAYERS,
-    processed_file: Path = PROCESSED_FEATURES_FILE,
+    basic_team_stats: pd.DataFrame,
+    advanced_team_stats: pd.DataFrame,
+    player_stats: pd.DataFrame,
+    processed_file: Path,
 ) -> pd.DataFrame:
-    """Build the real feature matrix from cached or downloaded NBA API data."""
-    if top_n_players != NUM_ROTATION_PLAYERS:
-        raise ValueError(
-            f"This research pipeline expects top_n_players={NUM_ROTATION_PLAYERS}; "
-            f"received {top_n_players}."
-        )
-
-    if processed_file.exists():
-        cached_features = pd.read_csv(processed_file)
-        if set(seasons).issubset(set(cached_features["SEASON"].unique())):
-            return cached_features[cached_features["SEASON"].isin(seasons)].copy()
-
-    basic_team_stats = download_basic_team_stats(SEASONS)
-    advanced_team_stats = download_advanced_team_stats(SEASONS)
-    player_stats = download_player_stats(SEASONS)
-
-    if basic_team_stats.empty or advanced_team_stats.empty or player_stats.empty:
-        raise RuntimeError("Unable to build the real dataset because one or more raw tables are empty.")
-
+    advanced_team_stats = _normalize_advanced_team_stats(advanced_team_stats)
     advanced_columns = ["TEAM_ID", "SEASON"] + [
-        column for column in advanced_team_stats.columns if column.startswith("E_")
+        column for column in ["E_OFF_RATING", "E_DEF_RATING", "E_NET_RATING", "E_PACE"]
+        if column in advanced_team_stats.columns
     ]
     all_team_stats = basic_team_stats.merge(
         advanced_team_stats[advanced_columns],
@@ -367,9 +569,87 @@ def build_real_dataset(
             rows.append(row)
 
     features_df = pd.DataFrame(rows).fillna(0)
+    features_df = features_df.reindex(columns=_expected_feature_columns(), fill_value=0)
     processed_file.parent.mkdir(parents=True, exist_ok=True)
     features_df.to_csv(processed_file, index=False)
     return features_df
+
+
+def build_real_dataset(
+    seasons: List[str],
+    top_n_players: int = NUM_ROTATION_PLAYERS,
+    processed_file: Path = PROCESSED_FEATURES_FILE,
+) -> pd.DataFrame:
+    """Build the real feature matrix from cached or downloaded NBA API data."""
+    if top_n_players != NUM_ROTATION_PLAYERS:
+        raise ValueError(
+            f"This research pipeline expects top_n_players={NUM_ROTATION_PLAYERS}; "
+            f"received {top_n_players}."
+        )
+
+    if processed_file.exists():
+        cached_features = pd.read_csv(processed_file)
+        if set(seasons).issubset(set(cached_features["SEASON"].unique())):
+            return cached_features[cached_features["SEASON"].isin(seasons)].copy()
+
+    basic_team_stats = download_basic_team_stats(SEASONS)
+    advanced_team_stats = download_advanced_team_stats(SEASONS)
+    player_stats = download_player_stats(SEASONS)
+
+    if basic_team_stats.empty or advanced_team_stats.empty or player_stats.empty:
+        raise RuntimeError("Unable to build the real dataset because one or more raw tables are empty.")
+
+    return _build_feature_matrix_from_stats(
+        seasons=seasons,
+        basic_team_stats=basic_team_stats,
+        advanced_team_stats=advanced_team_stats,
+        player_stats=player_stats,
+        processed_file=processed_file,
+    )
+
+
+def build_midseason_dataset(
+    seasons: List[str],
+    top_n_players: int = NUM_ROTATION_PLAYERS,
+    processed_file: Path = PROCESSED_MIDSEASON_FEATURES_FILE,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Build the All-Star-break proxy feature matrix with final playoff labels."""
+    if top_n_players != NUM_ROTATION_PLAYERS:
+        raise ValueError(
+            f"This research pipeline expects top_n_players={NUM_ROTATION_PLAYERS}; "
+            f"received {top_n_players}."
+        )
+
+    if processed_file.exists() and not force_refresh:
+        cached_features = pd.read_csv(processed_file)
+        if set(seasons).issubset(set(cached_features["SEASON"].unique())):
+            return cached_features[cached_features["SEASON"].isin(seasons)].copy()
+
+    _validate_midseason_cutoffs(seasons)
+    basic_team_stats = download_midseason_team_stats(
+        seasons=seasons,
+        force_refresh=force_refresh,
+    )
+    advanced_team_stats = download_midseason_advanced_team_stats(
+        seasons=seasons,
+        force_refresh=force_refresh,
+    )
+    player_stats = download_midseason_player_stats(
+        seasons=seasons,
+        force_refresh=force_refresh,
+    )
+
+    if basic_team_stats.empty or advanced_team_stats.empty or player_stats.empty:
+        raise RuntimeError("Unable to build the mid-season dataset because one or more raw tables are empty.")
+
+    return _build_feature_matrix_from_stats(
+        seasons=seasons,
+        basic_team_stats=basic_team_stats,
+        advanced_team_stats=advanced_team_stats,
+        player_stats=player_stats,
+        processed_file=processed_file,
+    )
 
 
 def generate_mock_team_stats(season: str, n_teams: int = 30) -> pd.DataFrame:
@@ -482,6 +762,7 @@ def build_dataset(
     seasons: Optional[List[str]] = None,
     top_n_players: int = NUM_ROTATION_PLAYERS,
     save_path: Optional[str] = None,
+    allow_mock_fallback: bool = True,
 ) -> pd.DataFrame:
     """Build the dataset used by the package.
 
@@ -490,14 +771,19 @@ def build_dataset(
     function falls back to a schema-compatible mock dataset.
     """
     seasons = seasons or SEASONS
+    processed_file = Path(save_path) if save_path else PROCESSED_FEATURES_FILE
 
     try:
-        if NBA_API_AVAILABLE:
-            dataset = build_real_dataset(seasons=seasons, top_n_players=top_n_players)
-        else:
-            print("Warning: nba_api not installed. Falling back to deterministic mock data.")
-            dataset = build_mock_dataset(seasons=seasons, top_n_players=top_n_players)
+        dataset = build_real_dataset(
+            seasons=seasons,
+            top_n_players=top_n_players,
+            processed_file=processed_file,
+        )
     except Exception as exc:
+        if not allow_mock_fallback:
+            raise RuntimeError(
+                "Failed to build the real dataset and mock fallback is disabled."
+            ) from exc
         print(f"Warning: failed to build real dataset ({exc}). Falling back to mock data.")
         dataset = build_mock_dataset(seasons=seasons, top_n_players=top_n_players)
 

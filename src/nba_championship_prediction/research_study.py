@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,7 +23,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from .data_pipeline import NUM_ROTATION_PLAYERS, build_dataset, prepare_model_inputs
+from .data_pipeline import NUM_ROTATION_PLAYERS, PROCESSED_FEATURES_FILE, build_dataset, prepare_model_inputs
 from .historical_labels import PLAYOFF_LABEL_NAMES, SEASONS
 from .modeling import AttentionModel, MLPBaseline
 
@@ -35,8 +36,40 @@ MODEL_DISPLAY_NAMES = {
 }
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the NBA championship research study.")
+@dataclass(frozen=True)
+class StudyReportContext:
+    title: str = "Predicting NBA Championship Contenders from Team and Rotation Statistics"
+    setting_name: str = "Full regular-season prediction"
+    feature_timeframe: str = "regular-season"
+    data_source_description: str = (
+        "`nba_api` endpoints `LeagueDashTeamStats`, `TeamEstimatedMetrics`, and `LeagueDashPlayerStats`"
+    )
+    feature_intro: str = "The final feature matrix contains"
+    main_result_note: str = (
+        "The table reports out-of-fold metrics across all team-seasons plus fold-level mean and "
+        "standard deviation for accuracy. Random forest is the most accurate model in this run, "
+        "the MLP baseline has the strongest macro F1, and the attention model sits between them "
+        "while offering direct player-importance explanations."
+    )
+    limitations: list[str] = field(default_factory=lambda: [
+        "The dataset is small for a six-class forecasting problem, especially at the champion tail.",
+        "Roster continuity and conference strength are useful but still fairly coarse contextual features.",
+        "The study uses full regular-season data rather than a strict All-Star-break snapshot, so the results should be interpreted as season-level forecasting rather than a pure mid-season forecast.",
+        "Hyperparameter search was intentionally lightweight to preserve reproducibility and avoid overfitting the small dataset.",
+    ])
+    data_notes: list[str] = field(default_factory=list)
+    figure_prefix: str = "research"
+    command_name: str = "run_research_study.py"
+
+
+def build_parser(
+    description: str = "Run the NBA championship research study.",
+    default_output_dir: str = "results/research_study",
+    default_report_path: str = "docs/final_report.md",
+    default_figures_dir: str = "docs/figures",
+    include_force_refresh_midseason: bool = False,
+) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--epochs-mlp", type=int, default=150, help="Training epochs for the MLP baseline.")
     parser.add_argument("--epochs-attention", type=int, default=200, help="Training epochs for the attention model.")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for neural models.")
@@ -44,21 +77,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="results/research_study",
+        default=default_output_dir,
         help="Directory for JSON, CSV, and intermediate experiment artifacts.",
     )
     parser.add_argument(
         "--report-path",
         type=str,
-        default="docs/final_report.md",
+        default=default_report_path,
         help="Path to the generated markdown report.",
     )
     parser.add_argument(
         "--figures-dir",
         type=str,
-        default="docs/figures",
+        default=default_figures_dir,
         help="Directory for report figures.",
     )
+    if include_force_refresh_midseason:
+        parser.add_argument(
+            "--force-refresh-midseason",
+            action="store_true",
+            help="Ignore cached mid-season processed/raw files and refetch mid-season NBA API data.",
+        )
+    return parser
+
+
+def parse_args(**parser_kwargs: Any) -> argparse.Namespace:
+    parser = build_parser(**parser_kwargs)
     return parser.parse_args()
 
 
@@ -465,6 +509,21 @@ def to_markdown_table(rows: list[dict[str, str]], headers: list[str]) -> str:
     return "\n".join([header_line, divider, *body])
 
 
+def markdown_relative_path(path: Path, base_dir: Path) -> str:
+    try:
+        return path.relative_to(base_dir).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def numbered_markdown(items: list[str]) -> str:
+    return "\n".join(f"{index}. {item}" for index, item in enumerate(items, start=1))
+
+
+def bulleted_markdown(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
+
+
 def write_final_report(
     dataset: pd.DataFrame,
     metrics: dict[str, dict[str, Any]],
@@ -476,6 +535,7 @@ def write_final_report(
     output_dir: Path,
     figures_dir: Path,
     args: argparse.Namespace,
+    context: StudyReportContext,
 ) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     comparison_rows = []
@@ -534,12 +594,28 @@ def write_final_report(
 
     best_accuracy_key = max(metrics, key=lambda key: metrics[key]["overall_metrics"]["accuracy"])
     best_macro_f1_key = max(metrics, key=lambda key: metrics[key]["overall_metrics"]["f1_macro"])
+    best_top2_key = max(metrics, key=lambda key: metrics[key]["overall_metrics"]["top2_accuracy"])
+    best_fold_key, best_fold = max(
+        (
+            (model_key, fold_metric)
+            for model_key, model_metrics in metrics.items()
+            for fold_metric in model_metrics["fold_metrics"]
+        ),
+        key=lambda item: item[1]["accuracy"],
+    )
+    confusion_figure = figures_dir / f"{context.figure_prefix}_confusion_matrices.png"
+    attention_figure = figures_dir / f"{context.figure_prefix}_attention_weights.png"
+    tsne_figure = figures_dir / f"{context.figure_prefix}_tsne.png"
+    report_dir = report_path.parent
+    data_notes = bulleted_markdown(context.data_notes)
+    data_notes_section = f"\nAdditional data notes:\n\n{data_notes}\n" if context.data_notes else ""
+    limitations = numbered_markdown(context.limitations)
 
-    report = f"""# Predicting NBA Championship Contenders from Team and Rotation Statistics
+    report = f"""# {context.title}
 
 ## Abstract
 
-This report evaluates whether NBA postseason outcomes can be predicted from regular-season team efficiency, contextual roster features, and the top eight players in each team's rotation. Using the 2003-04 through 2023-24 seasons ({len(seasons_covered)} seasons; {len(dataset)} team-seasons), we compare four models under leave-one-season-out cross-validation: logistic regression, random forest, a multilayer perceptron baseline, and an attention-based roster model. In this run, {MODEL_DISPLAY_NAMES[best_accuracy_key]} achieves the best overall accuracy, while {MODEL_DISPLAY_NAMES[best_macro_f1_key]} achieves the highest macro F1. The main empirical challenge remains severe class imbalance, especially for the Champion class.
+This report evaluates whether NBA postseason outcomes can be predicted from {context.feature_timeframe} team efficiency, contextual roster features, and the top eight players in each team's rotation. Using the 2003-04 through 2023-24 seasons ({len(seasons_covered)} seasons; {len(dataset)} team-seasons), we compare four models under leave-one-season-out cross-validation: logistic regression, random forest, a multilayer perceptron baseline, and an attention-based roster model. In this run, {MODEL_DISPLAY_NAMES[best_accuracy_key]} achieves the best overall accuracy, while {MODEL_DISPLAY_NAMES[best_macro_f1_key]} achieves the highest macro F1. The main empirical challenge remains severe class imbalance, especially for the Champion class.
 
 ## Research Question
 
@@ -553,11 +629,13 @@ The task is a six-class classification problem:
 
 ## Data Provenance
 
+- Forecasting setting: {context.setting_name}
 - Seasons covered: {seasons_covered[0]} through {seasons_covered[-1]}
-- Primary data source: `nba_api` endpoints `LeagueDashTeamStats`, `TeamEstimatedMetrics`, and `LeagueDashPlayerStats`
+- Primary data source: {context.data_source_description}
 - Curated postseason labels: local historical dictionary extracted from the project notebook and now versioned in code
 - Unit of analysis: one team-season
 - Sample count: {len(dataset)} team-seasons
+{data_notes_section}
 
 Class distribution:
 
@@ -565,7 +643,7 @@ Class distribution:
 
 ## Feature Construction
 
-The final feature matrix contains:
+{context.feature_intro}:
 
 - Team-level regular-season performance variables: win percentage, scoring, rebounding, playmaking, shot-making, plus/minus, wins/losses, and advanced efficiency metrics.
 - Contextual variables: conference-strength proxy and roster continuity.
@@ -585,7 +663,17 @@ The final feature matrix contains:
 
 {comparison_table}
 
-The table reports out-of-fold metrics across all team-seasons plus fold-level mean and standard deviation for accuracy. Random forest is the most accurate model in this run, the MLP baseline has the strongest macro F1, and the attention model sits between them while offering direct player-importance explanations.
+{context.main_result_note}
+
+### Real Results Artifact Summary
+
+The metrics above are copied from generated artifacts in `{output_dir.as_posix()}`, not estimated or mocked. `predictions.csv` contains {len(dataset)} out-of-fold team-season predictions plus the header row, matching the {len(dataset)} team-seasons described in the data section. The main model ranking comes from `model_comparison.csv` and `summary_metrics.json`:
+
+- Best OOF accuracy: {MODEL_DISPLAY_NAMES[best_accuracy_key]} at {metrics[best_accuracy_key]['overall_metrics']['accuracy']:.6f}.
+- Best OOF macro F1: {MODEL_DISPLAY_NAMES[best_macro_f1_key]} at {metrics[best_macro_f1_key]['overall_metrics']['f1_macro']:.6f}.
+- Best OOF top-2 accuracy: {MODEL_DISPLAY_NAMES[best_top2_key]} at {metrics[best_top2_key]['overall_metrics']['top2_accuracy']:.6f}.
+- Attention model OOF metrics: accuracy {metrics['attention_model']['overall_metrics']['accuracy']:.6f}, macro F1 {metrics['attention_model']['overall_metrics']['f1_macro']:.6f}, top-2 accuracy {metrics['attention_model']['overall_metrics']['top2_accuracy']:.6f}.
+- Best single-season fold accuracy observed: {MODEL_DISPLAY_NAMES[best_fold_key]} at {best_fold['accuracy']:.6f} in {best_fold['season']}.
 
 ## Per-Class Analysis
 
@@ -600,15 +688,15 @@ Detailed per-class tables are saved at:
 
 ### Confusion Matrices
 
-![Confusion matrices](figures/research_confusion_matrices.png)
+![Confusion matrices]({markdown_relative_path(confusion_figure, report_dir)})
 
 ### Attention Weight Profiles
 
-![Attention weights](figures/research_attention_weights.png)
+![Attention weights]({markdown_relative_path(attention_figure, report_dir)})
 
 ### t-SNE Projection of Team-Season Features
 
-![t-SNE projection](figures/research_tsne.png)
+![t-SNE projection]({markdown_relative_path(tsne_figure, report_dir)})
 
 ## Error Analysis and Interpretation
 
@@ -628,10 +716,7 @@ This is not a comprehensive fairness analysis, but it offers a basic sanity chec
 
 ## Threats to Validity
 
-1. The dataset is small for a six-class forecasting problem, especially at the champion tail.
-2. Roster continuity and conference strength are useful but still fairly coarse contextual features.
-3. The study uses full regular-season data rather than a strict All-Star-break snapshot, so the results should be interpreted as season-level forecasting rather than a pure mid-season forecast.
-4. Hyperparameter search was intentionally lightweight to preserve reproducibility and avoid overfitting the small dataset.
+{limitations}
 
 ## Conclusion
 
@@ -642,7 +727,7 @@ The project now has a real-data experimental pipeline and a reproducible report 
 Command used to generate this report:
 
 ```bash
-python run_research_study.py --epochs-mlp {args.epochs_mlp} --epochs-attention {args.epochs_attention} --lr {args.lr} --seed {args.seed}
+python {context.command_name} --epochs-mlp {args.epochs_mlp} --epochs-attention {args.epochs_attention} --lr {args.lr} --seed {args.seed}
 ```
 
 Key artifact paths:
@@ -665,17 +750,34 @@ def dataframe_from_classification_report(report_dict: dict[str, Any]) -> pd.Data
     return frame
 
 
-def run_study(args: argparse.Namespace) -> None:
+DatasetBuilder = Callable[[list[str], Path], pd.DataFrame]
+
+
+def build_full_dataset_for_study(seasons: list[str], processed_file: Path) -> pd.DataFrame:
+    return build_dataset(
+        seasons=seasons,
+        save_path=str(processed_file),
+        allow_mock_fallback=False,
+    )
+
+
+def run_study(
+    args: argparse.Namespace,
+    dataset_builder: DatasetBuilder = build_full_dataset_for_study,
+    processed_file: Path = PROCESSED_FEATURES_FILE,
+    report_context: StudyReportContext | None = None,
+) -> None:
     set_research_seed(args.seed)
     output_dir = Path(args.output_dir)
     report_path = Path(args.report_path)
     figures_dir = Path(args.figures_dir)
+    context = report_context or StudyReportContext()
     output_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
     sns.set_style("whitegrid")
 
     print("Building dataset...")
-    dataset = build_dataset(seasons=SEASONS, save_path=str(Path("data/processed/features_research.csv")))
+    dataset = dataset_builder(SEASONS, processed_file)
     prepared = prepare_model_inputs(dataset)
     X = prepared["X"]
     y = prepared["y"]
@@ -797,14 +899,14 @@ def run_study(args: argparse.Namespace) -> None:
             "mlp_baseline": mlp_preds,
             "attention_model": attention_preds,
         },
-        figure_path=figures_dir / "research_confusion_matrices.png",
+        figure_path=figures_dir / f"{context.figure_prefix}_confusion_matrices.png",
     )
     plot_attention_weights(
         attention_weights=attention_weights,
         labels=y,
-        figure_path=figures_dir / "research_attention_weights.png",
+        figure_path=figures_dir / f"{context.figure_prefix}_attention_weights.png",
     )
-    plot_tsne(X=X, y=y, figure_path=figures_dir / "research_tsne.png", seed=args.seed)
+    plot_tsne(X=X, y=y, figure_path=figures_dir / f"{context.figure_prefix}_tsne.png", seed=args.seed)
 
     write_final_report(
         dataset=dataset,
@@ -817,6 +919,7 @@ def run_study(args: argparse.Namespace) -> None:
         output_dir=output_dir,
         figures_dir=figures_dir,
         args=args,
+        context=context,
     )
 
     print("Research study complete.")
