@@ -3,6 +3,18 @@ __pycache__/
 .venv/
 .ipynb_checkpoints/
 data/raw/
+
+# Generated demo/showcase outputs
 demo_outputs/
+showcase_outputs/
+showcase_*/
+*showcase_report.md
+*showcase_results/
+*showcase_figures/
+
+# Local build/runtime scratch space
 outputs/
 .tmp/
+
+# Local presentation exports; keep repo focused on code, data, results, and reports.
+*.pptx
