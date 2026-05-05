@@ -69,6 +69,16 @@ The final feature matrix contains:
 
 The table reports out-of-fold metrics across all team-seasons plus fold-level mean and standard deviation for accuracy. Random forest is the most accurate model in this run, the MLP baseline has the strongest macro F1, and the attention model sits between them while offering direct player-importance explanations.
 
+### Real Results Artifact Summary
+
+The metrics above are copied from the generated research artifacts in `results/research_study`, not estimated or mocked. `predictions.csv` contains 629 out-of-fold team-season predictions plus the header row, matching the 629 team-seasons described in the data section. The main model ranking comes from `model_comparison.csv` and `summary_metrics.json`:
+
+- Best OOF accuracy: Random Forest at 0.680445.
+- Best OOF macro F1: MLP Baseline at 0.407933.
+- Best OOF top-2 accuracy: Random Forest at 0.842607.
+- Attention model OOF metrics: accuracy 0.653418, macro F1 0.393419, top-2 accuracy 0.825119.
+- Best single-season fold accuracy observed for both Random Forest and Attention Model: 0.800000 in 2016-17.
+
 ## Per-Class Analysis
 
 Champion-class performance is the hardest part of the problem because there is only one champion per season. In the attention model, Champion precision is 0.24, recall is 0.29, and F1 is 0.26. For the strongest baseline (MLP Baseline), Champion precision is 0.35, recall is 0.29, and F1 is 0.32.
