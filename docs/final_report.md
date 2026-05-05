@@ -1,141 +1,56 @@
-# Predicting NBA Postseason Depth from Regular-Season Team and Rotation Statistics Using Deep Learning
+# Title
+
+Predicting NBA Postseason Depth from Regular-Season Team and Rotation Statistics Using Deep Learning
 
 Pranav Kumar Kaliaperumal, Shrujal Mogadati, and Disha Srinivasa
 Department of Computer Science, University of Colorado Denver, Denver, CO 80217 USA
 
-## Abstract
+*Keywords*: NBA, sports analytics, deep learning, attention mechanism, player embeddings, postseason prediction, class imbalance, machine learning
 
-We investigate whether deep learning models can forecast a team's eventual NBA playoff depth from regular-season team efficiency, contextual roster features, and rotation-level player statistics. Using data from the 2003-04 through 2023-24 seasons (629 team-seasons), we compare four models under leave-one-season-out cross-validation: logistic regression, random forest, a multilayer perceptron baseline, and an attention-based roster model that learns player-importance weights. In the full-season setting, random forest achieves the best overall accuracy at 68.0% and top-2 accuracy at 84.3%, while the MLP baseline achieves the highest macro F1 at 40.8%. Our attention model reaches 65.3% accuracy and 39.3% macro F1 while providing interpretable player-importance diagnostics. We also evaluate a harder mid-season forecasting setting that uses only statistics available around the All-Star break; all models decline in performance, yet the attention model exhibits the smallest macro-F1 drop. These results show that postseason forecasting is learnable but difficult, with severe class imbalance representing the primary barrier to robust champion prediction. We include a market-size fairness audit and discuss ethical considerations regarding equitable prediction across large-market and small-market franchises.
+# Problem Statement
 
-*Keywords*-NBA, sports analytics, deep learning, attention mechanism, player embeddings, postseason prediction, class imbalance, machine learning
+We study whether we can forecast an NBA team's eventual postseason depth from regular-season team performance, roster context, and rotation-level player statistics. Our project frames the task as a six-class classification problem where each team-season receives one final playoff-depth label: Missed Playoffs, First Round Exit, Second Round Exit, Conference Finals, Finals Loss, or Champion. We use this multi-class formulation because it preserves the difference between a lottery team, a first-round team, a serious contender, and a champion instead of collapsing the season into a simpler champion-versus-non-champion task.
 
-## I. Introduction
+We evaluate the problem across 21 NBA seasons, from 2003-04 through 2023-24, with 629 team-seasons. Each row represents one team in one season, and each label records the deepest playoff round that team reached. We make the task intentionally realistic by validating with leave-one-season-out cross-validation: for each fold, we train on all seasons except one and test on the held-out season. This design asks whether our model generalizes to a future season rather than memorizing patterns from randomly mixed rows.
 
-Every NBA season, thirty teams compete for the championship, yet only a handful are genuine contenders. Front offices, analysts, and fans spend considerable effort debating which teams will advance deepest into the playoffs. We address a concrete forecasting question: given how a team performs during the regular season, can we predict how far that team will advance in the postseason?
+We face three central difficulties. First, regular-season performance does not fully determine playoff success because matchups, injuries, coaching adjustments, trades, and late-season form can change the playoff path. Second, the dataset is small for deep learning because we only get 30 team examples per season and only one champion per season. Third, the labels are highly imbalanced: 293 team-seasons miss the playoffs, while only 21 team-seasons win the championship and 21 lose in the Finals.
 
-### A. Problem Statement
+# Motivation
 
-We frame this as a six-class classification task. Each team-season receives one of six labels based on its final playoff outcome: Missed Playoffs, First Round Exit, Second Round Exit, Conference Finals, Finals Loss, or Champion. This multi-class formulation preserves playoff depth rather than collapsing the task into a binary champion-versus-non-champion decision. While the multi-class approach is more informative for analysts who want to distinguish pretenders from serious contenders, it is also substantially harder because the deepest outcomes occur only once or twice per season.
+We chose this problem because playoff-depth forecasting sits at the intersection of basketball strategy and machine learning. Teams, analysts, broadcasters, and fans constantly ask whether a team is merely good in the regular season or built for the playoffs. A useful model can support trade-deadline planning, roster evaluation, media analysis, fan engagement, ticketing decisions, and sponsorship planning [1]. We do not treat our model as a betting system or a replacement for expert scouting; we treat it as a decision-support tool that clarifies which statistical signals correlate with postseason depth.
 
-The forecasting problem is challenging for several reasons. First, the NBA regular season consists of eighty-two games, but the playoffs are four best-of-seven rounds with matchup-specific adjustments and much shorter rotations. A team's regular-season dominance does not guarantee postseason success because playoff basketball involves more focused scouting, more intense defense, and opponent-specific strategies that regular-season statistics may not capture. Second, injuries, trades, and late-season form changes can dramatically alter a team's playoff trajectory after the regular season concludes. Third, the class distribution is highly imbalanced: roughly half of all team-seasons miss the playoffs, while only one team per season wins the championship.
+Our project also tests a deeper modeling question. Most NBA prediction work focuses on individual game outcomes or binary playoff qualification, and many strong systems rely on traditional tabular models [2]-[5]. We ask whether a roster-aware neural model can add value when we represent the top eight rotation players explicitly. Basketball is not only a team-average sport: two teams can have similar net ratings while differing sharply in star power, shooting depth, defensive balance, and bench reliability. We therefore build an attention model that learns how much influence to assign to each rotation slot when it forms a team-level postseason prediction.
 
-### B. Motivation and Application Value
+We also include a mid-season extension because many real decisions happen before the full regular season ends. In that setting, we use statistics available around season-specific All-Star-break proxy dates while keeping the final postseason outcome as the label. This experiment asks whether our workflow can forecast playoff depth when teams still have time to trade, rest players, adjust rotations, or change strategic direction.
 
-Predicting which teams will contend for the title is one of the most discussed and practically consequential topics in basketball. Playoff-depth forecasts can support front-office planning, trade-deadline decisions, roster evaluation, media analysis, fan engagement, and long-horizon business decisions such as ticket pricing, broadcast planning, and sponsorship valuation [1]. A team that can estimate whether it is most likely a first-round exit, conference-finals contender, or true championship threat faces different strategic choices: it may trade future draft capital for immediate help, preserve flexibility, prioritize player development, or avoid overreacting to a misleading regular-season record.
+We also treat ethics as part of the motivation rather than an afterthought. Our project uses performance statistics instead of player demographics, race, nationality, salary, endorsement value, or media popularity, but team-level sports data can still reflect structural advantages such as market size, organizational resources, media exposure, and free-agency appeal. We therefore include a market-size fairness audit and frame our predictions as decision-support signals, not as final judgments about players, teams, fan bases, cities, or organizational worth.
 
-The applied importance is especially strong because playoff success is not a simple extension of regular-season wins. Postseason basketball compresses rotations, magnifies star creation, rewards matchup-specific adaptability, and punishes weaknesses that may be hidden across an 82-game schedule. This makes playoff-depth forecasting interesting for both basketball analytics and machine learning. The model must learn from structured team statistics, player production, and contextual signals while recognizing that the final outcome can hinge on small samples, injuries, seeding paths, and opponent matchups. A useful model therefore should not only chase exact champion prediction; it should help identify plausible playoff tiers and communicate uncertainty when several outcomes remain close.
+# Related Works
 
-From a machine learning perspective, most existing work on NBA prediction focuses on individual game outcomes and relies on traditional methods such as random forests and XGBoost [2]-[5]. Fewer studies apply deep learning to season-level playoff depth, and fewer still combine team aggregates with explicit roster structure. This is the gap we aim to fill. We hypothesize that championship outcomes are not explained by team aggregates alone. Two strong regular-season teams may look similar in summary metrics while differing meaningfully in how production is distributed across stars, secondary creators, shooters, and rotation depth. Our attention-based model tests whether a learned weighting over the top eight rotation players adds predictive signal and interpretability beyond standard tabular baselines.
+Sports prediction research often follows two paths: game-level outcome prediction and season-level team evaluation. Khanmohammadi et al. [1] proposed MambaNet, a hybrid neural network that uses team and player time-series to predict NBA playoff games and reports AUC values from 0.72 to 0.82. Zhao et al. [2] used a fused graph convolutional network plus random forest model for basketball game outcome prediction, which motivates graph and team-interaction structure even though our project uses season-level team rows. Ouyang et al. [4] combined XGBoost with SHAP explanations for NBA game outcomes, and Rios et al. [5] applied long-sequence LSTMs to NBA game prediction. These studies show that machine learning can model basketball outcomes, but they focus mainly on games rather than season-level playoff depth.
 
-### C. Ethical Considerations
+Representation learning provides another foundation for our project. Guan et al. [3] introduced NBA2Vec, which learns dense player representations from play outcomes without relying only on hand-crafted aggregate measures. Ibrahim et al. [6] and Teno et al. [7] studied season-level basketball prediction with machine learning, showing that championship and playoff-stage forecasting is feasible but difficult; Teno et al. specifically evaluate NBA game outcomes and playoff/championship stages across 10 seasons. Bunker and Thabtah [8] surveyed sport result prediction and explain why sports forecasting matters as a practical decision-support problem. Yeung [9] found that random forests performed well for NBA playoff qualification, and Perricone et al. [10] showed that NBA API data can support competent basketball outcome models.
 
-We design our model to use performance-based features such as team statistics, records, ratings, and rotation-player box-score summaries. We do not encode player demographics, nationality, race, socioeconomic background, salary, endorsement value, or media popularity. Even so, sports data can still reflect structural inequities. Team market size, organizational resources, national coverage, free-agency appeal, and historical franchise prestige may correlate with both roster strength and public perception. For that reason, we include a coarse market-size fairness audit using the attention model predictions and report the full-season and mid-season audit values from `results/research_study/market_fairness.json` and `results/midseason_study/market_fairness.json`.
+We also ground our work in class-imbalance and interpretability research. Chawla et al. [12] introduced SMOTE, Elreedy and Atiya [13] analyzed SMOTE variants, and He et al. [14] proposed ADASYN. We do not use synthetic oversampling in our main experiments because leave-one-season-out validation makes cross-season sample synthesis risky, but these methods clarify why our rare champion and Finals Loss classes are hard. Vaswani et al. [15] introduced attention mechanisms, which inspire our roster-weighting architecture. Explainable sports analytics work, including Ouyang et al. [4] and Wang et al. [11], motivates our attention diagnostics and our caution that learned weights support interpretation rather than causal claims.
 
-Responsible use is central to this project. The model should be treated as a decision-support and analysis tool, not as an authoritative ranking of teams, players, coaches, or markets. Forecasts can influence narratives around athletes and franchises, so users should avoid interpreting predictions as judgments about player worth, team culture, fan bases, or city-level merit. Attention weights should also be interpreted carefully: they indicate which top-eight rotation slots the model used for prediction, not which individual players causally produced wins or losses.
+Our project fills a gap between those threads. We use real NBA data, preserve six playoff-depth labels, compare classical and neural models, validate by season, inspect attention-based roster weights, audit market-size error, and evaluate both full-season and mid-season forecasting.
 
-Uncertainty and class imbalance require explicit caution. Champion and Finals Loss each appear only once per season, producing severe minority-class scarcity. This means exact champion predictions are fragile, and strong accuracy on common classes can coexist with weak rare-class recognition. We therefore report macro F1 and top-2 accuracy alongside exact accuracy, discuss the rare-class failures directly, and avoid overclaiming that the system can reliably identify champions. Demographic, player, and team-market concerns should be revisited in future work with richer fairness variables and stakeholder review, especially before applying any model to high-stakes roster, employment, betting, or public-reputation decisions.
+# Methods
 
-### D. Contributions
+## Data
 
-Our project makes the following contributions. First, we build a reproducible end-to-end pipeline that collects real NBA data via the nba_api library, engineers team and player features, and evaluates models under a season-aware validation protocol. Second, we design an attention-based architecture that learns which rotation slots matter most for postseason forecasting, offering interpretable player-importance weights that analysts can inspect. Third, we compare classical machine learning and deep learning models fairly under leave-one-season-out cross-validation, showing that the problem is learnable but that class imbalance remains the main barrier to champion prediction. Fourth, we extend the study to a mid-season forecasting setting and quantify how much performance drops when only partial-season information is available. Fifth, we include a fairness audit and discuss limitations transparently, setting a realistic benchmark that future architectures must beat consistently.
+We collect NBA data through the `nba_api` Python library [16], which exposes NBA.com statistics endpoints. For each season from 2003-04 through 2023-24, we assemble team box-score data, advanced team efficiency metrics, and player statistics. Our full-season processed dataset lives at `data/processed/features_research.csv`, and our mid-season processed dataset lives at `data/processed/features_midseason.csv`. Both files contain 629 rows and 112 columns.
 
-## II. Related Work
+We use one team-season as the unit of analysis. We keep metadata columns for `SEASON`, `TEAM`, `TEAM_ID`, `PLAYOFF_RESULT`, and `PLAYOFF_LABEL`, then append team, context, and player features. We choose 2003-04 as the starting point because it gives us a modern multi-season sample with consistent team and player statistics. We stop at 2023-24 because it is the most recent completed season in our committed artifacts, which keeps every label final and uncontested.
 
-Prior sports analytics research generally follows two complementary paths. One line models games directly, using team box scores, recent performance, player availability, or temporal sequences to predict a single matchup. Another line builds player or team representations from box-score, play-by-play, lineup, or tracking data and then uses machine learning to support scouting, strategy, or season forecasting. Across these studies, classical models such as logistic regression, random forests, gradient boosting, and k-nearest neighbors remain competitive because sports datasets are often structured, noisy, and relatively small. Deep learning methods can add value when the representation contains temporal, graph, or roster structure, but they must be evaluated against strong tabular baselines and interpreted cautiously.
+For full-season forecasting, we use complete regular-season statistics. For mid-season forecasting, we use the same schema but filter team and player statistics to season-specific All-Star-break proxy cutoffs through the pipeline described in `docs/midseason_report.md`. We keep the target label unchanged in both settings so that the mid-season task asks a harder and more practical question: how much can we infer about final playoff depth before the regular season finishes?
 
-### A. Game-Level Prediction
+## Labels
 
-Khanmohammadi et al. [1] proposed MambaNet, a hybrid neural network combining CNNs and RNNs to predict NBA playoff game outcomes. They achieved AUC scores between 0.72 and 0.82, but their focus was on individual playoff games rather than season-level championship prediction. Their work demonstrates that temporal dependencies in game sequences improve accuracy, yet it does not address how mid-season team snapshots forecast final playoff depth. Zhao et al. [2] used graph convolutional networks to model relationships between NBA teams for game prediction, reaching 71.54% accuracy. Their approach captures team interactions but does not examine player-level features or roster makeup. Ouyang et al. [4] integrated XGBoost and SHAP models for NBA game outcome prediction, demonstrating the value of explainable techniques in sports analytics. Their quantitative analysis showed which box-score features most influence single-game results. Rios et al. [5] applied long-sequence LSTM modeling to NBA game outcome prediction, showing that temporal dependencies improve accuracy beyond what traditional ML achieves. These game-level studies establish that deep learning can model basketball dynamics, but they do not answer the season-level question we pose.
-
-### B. Player and Team Representations
-
-Guan et al. [3] created NBA2Vec, which learns vector representations of NBA players from play-by-play data in a manner analogous to Word2Vec. They showed that these embeddings predict playoff series outcomes, but they did not extend the idea to season-level championship prediction. Their work is foundational for our approach because it demonstrates that player embeddings carry predictive signal. Ibrahim et al. [6] studied machine learning approaches to basketball championship prediction, reinforcing that season-level forecasting is feasible but difficult with limited samples. Teno et al. [7] addressed predicting season outcomes for the NBA using machine learning and data mining techniques, which is closer to our goal but did not use deep learning or player embeddings. They found that ensemble methods outperform single classifiers when forecasting season-level results.
-
-### C. Machine Learning in Sports Forecasting
-
-Bunker and Thabtah [8] surveyed machine learning frameworks for sport result prediction, highlighting that ensemble methods often outperform single classifiers. Their meta-analysis supports our decision to include random forest as a strong baseline. Yeung [9] compared logistic regression, k-nearest neighbors, random forest, and elastic net for NBA playoff qualification, finding that random forest achieved the highest ROC-AUC score of 0.841. Their research demonstrates the power of ensemble learning in sports but limits the task to binary playoff qualification rather than multi-class depth prediction. Perricone et al. [10] used traditional ML algorithms on NBA API data for outcome prediction, establishing that accessible public data supports competent forecasting models. Ni and Lee [11] conducted a comparative study of machine learning models for NCAA tournament games, finding that simpler models sometimes outperform complex ones when data is limited. Wang et al. [12] applied explainable AI techniques to NBA gameplay prediction, demonstrating that SHAP and LIME improve model transparency for coaching staff. Their work supports our emphasis on interpretability. Tsagris et al. [13] showed how half-time statistics can predict NBA game outcomes, reinforcing that intermediate snapshots carry signal that models can exploit.
-
-### D. Class Imbalance and Sampling Techniques
-
-Our dataset suffers from severe class imbalance because only one champion and one finals loser exist per season. Chawla et al. [14] introduced SMOTE, a synthetic minority oversampling technique that creates synthetic examples rather than replicating existing ones, improving classifier performance in ROC space. Their experiments on multiple datasets showed that SMOTE combined with under-sampling outperforms plain under-sampling for minority class recognition. Elreedy and Atiya [15] provided a comprehensive analysis of SMOTE variants for handling class imbalance, identifying conditions under which different oversampling strategies succeed. He et al. [16] proposed ADASYN, an adaptive synthetic sampling approach that focuses on harder minority examples. We do not apply SMOTE in our main experiments because our season-aware validation protocol makes synthetic sample generation across seasons problematic; creating synthetic team-seasons could violate the temporal structure we aim to preserve. However, we cite these works to contextualize the imbalance challenge and to suggest future directions.
-
-### E. Attention Mechanisms
-
-Vaswani et al. [17] introduced the Transformer architecture based entirely on attention mechanisms, eliminating recurrence and enabling parallel training. Their self-attention mechanism allows each element in a sequence to attend to every other element, which we adapt to our roster setting where each player slot attends to the others. Attention has since been applied across domains from natural language processing to computer vision; our work applies a simplified attention pooling to sports rosters, learning which players in a rotation deserve more influence when predicting team success.
-
-### F. Summary of Gap
-
-Existing literature either focuses on game-level prediction rather than season-level depth forecasting, or uses traditional machine learning without exploring deep learning architectures that explicitly model roster structure. Our project fills this gap by combining real multi-season NBA data from 2003-04 through 2023-24 with six-class playoff-depth labels, fixed top-eight rotation-player features, attention-based roster interpretability, and leave-one-season-out validation. The resulting task is more granular than binary playoff qualification and more season-oriented than individual game prediction.
-
-The project's contribution is also unique in its extension beyond a single full-season snapshot. We evaluate both complete regular-season features and a harder mid-season setting built around season-specific All-Star-break proxy dates, while preserving the same final playoff-depth labels. This creates a practical trade-deadline-style forecasting benchmark. The full-season model comparison is stored in `results/research_study/model_comparison.csv`, the mid-season comparison is stored in `results/midseason_study/model_comparison.csv`, and the corresponding attention diagnostics are visualized in `docs/figures/research_attention_weights.png` and `docs/figures_midseason/midseason_attention_weights.png`.
-
-## III. Methodology
-
-### A. Data Collection
-
-We collect data using the nba_api Python library [18], which provides programmatic access to NBA.com statistics. For each season from 2003-04 through 2023-24, we pull three categories of data. Team-level regular-season statistics come from the LeagueDashTeamStats endpoint and include box-score aggregates such as wins, losses, points, rebounds, assists, steals, blocks, and shooting percentages. Advanced team metrics come from TeamEstimatedMetrics and include offensive rating, defensive rating, net rating, and pace. Player statistics come from LeagueDashPlayerStats and include per-game and advanced metrics for every player in the league. We also curate historical playoff labels that record the deepest round each team reached. The unit of analysis is one team-season, yielding 629 total rows (30 teams per season across 21 seasons, minus a few expansions and lockout years).
-
-We choose the 2003-04 season as our starting point because it marks the beginning of the modern analytics era in the NBA, when tracking data and advanced metrics became more widely adopted. The 2023-24 season is the most recent complete season available at the time of our study. We intentionally exclude the current in-progress season to ensure that all labels are final and uncontested.
-
-### B. Label Definition
-
-We define six ordered classes for playoff depth:
-
-- Class 0: Missed Playoffs
-- Class 1: First Round Exit
-- Class 2: Second Round Exit
-- Class 3: Conference Finals
-- Class 4: Finals Loss
-- Class 5: Champion
-
-These labels intentionally preserve playoff depth. A binary champion-versus-non-champion task would be simpler but far less informative for analysts who want to distinguish contenders from pretenders. The ordered nature of the classes also means that adjacent classes are often more similar than distant classes; a team that reaches the Conference Finals is typically closer in quality to a Finals team than to a lottery team.
-
-### C. Feature Engineering
-
-Our feature matrix combines three groups of predictors.
-
-Team-level performance variables capture overall quality and style. These include win percentage, wins, losses, points, rebounds, assists, steals, blocks, turnovers, field-goal percentage, three-point percentage, free-throw percentage, plus/minus, offensive rating, defensive rating, net rating, and pace. These metrics summarize how a team performed across the entire regular season and provide the strongest baseline signal for playoff success.
-
-Contextual variables add environmental information that may moderate the predictive power of team statistics. Conference strength proxy captures the competitive context of the Eastern or Western Conference in a given season; some seasons feature historically strong conferences where good teams miss the playoffs, while other seasons feature weaker conferences where mediocre teams advance. Roster continuity summarizes how stable a team's rotation remains across the data window; regular-season quality may be more predictive when it comes from a stable roster rather than a team whose personnel shifted substantially due to trades or injuries.
-
-Player-level variables represent the top eight rotation players ranked by minutes played. Each slot P1 through P8 contains points, rebounds, assists, steals, blocks, turnovers, field-goal percentage, three-point percentage, free-throw percentage, minutes, and an approximate PER-style impact score. Using fixed player slots gives our neural models a consistent representation of rotation structure. The first slot corresponds to the highest-minute player, so the representation is reproducible from data rather than relying on manual superstar labels. This design choice means our model does not need to know whether a player is a star or a role player; it learns the importance of each slot from the data.
-
-### D. Model Architecture
-
-We evaluate four models that span linear, nonlinear, and neural paradigms.
-
-Logistic Regression serves as a linear baseline to measure how much signal exists in a simple regularized decision surface. We include L2 regularization and tune the regularization strength via cross-validation.
-
-Random Forest serves as a nonlinear tabular baseline that can capture interactions among team and player features without neural training. We set 200 estimators and use entropy criterion. Ensemble tree methods are known to perform well on structured sports data [8, 9], and random forest in particular has been identified as a top performer for NBA playoff prediction tasks.
-
-MLP Baseline is a feed-forward neural network over the full flattened feature vector. It has two hidden layers with 128 and 64 units, ReLU activation, and dropout regularization at rate 0.3. We train with cross-entropy loss and apply class weights inversely proportional to class frequency to partially mitigate imbalance.
-
-Attention Model is our proposed architecture. It has two main parts. First, each player slot's statistics pass through a shared subnetwork that produces a compact player embedding of dimension 16. These embeddings are combined using attention pooling, which lets the model learn which players matter most. Specifically, we compute attention scores by passing each player embedding through a learned linear layer, apply softmax across the eight slots, and form a weighted sum of embeddings. The combined roster representation is then concatenated with team-level and contextual features and passed through fully connected layers (128 and 64 units with ReLU and dropout) to predict the playoff outcome. The attention mechanism computes a weighted sum of player embeddings where the weights are learned from the embeddings themselves, analogous to single-head self-attention [17].
-
-### E. Training and Evaluation Protocol
-
-We use leave-one-season-out cross-validation. For each of 21 folds, we hold out one full NBA season for testing and train on all remaining seasons. This design is stronger than random row-level splitting because it reduces leakage across seasons and better reflects real forecasting behavior: applying patterns learned from prior seasons to a future season. In financial and sports forecasting, temporal leakage is a serious threat to validity; our protocol eliminates it by construction.
-
-Neural models use the Adam optimizer. The MLP baseline trains for 150 epochs and the attention model trains for 200 epochs, both with learning rate 0.001. We set random seed 42 for reproducibility. All experiments run on CPU within a local workspace. We apply early stopping based on validation loss computed within each training fold to prevent overfitting.
-
-We report three main metrics. Accuracy measures the share of team-seasons whose exact playoff-depth class is predicted correctly. Macro F1 is the unweighted mean F1 across all six classes; this is crucial because rare classes such as Finals Loss and Champion should influence the score rather than being overwhelmed by missed-playoff teams. Top-2 accuracy records whether the correct class appears among the model's two highest-probability classes. This is useful for playoff-depth forecasting because adjacent classes are often difficult to separate, and a model that ranks the true outcome second may still be informative for analysts.
-
-### F. Interpretability
-
-We visualize the learned attention weights to see which rotation slots the model considers most important for championship contention. We also use t-SNE with perplexity 30 to project team-season feature vectors into two dimensions, providing a qualitative view of whether championship teams cluster together in feature space. These visualizations are diagnostic rather than evaluative; they help us understand how the model uses roster information rather than proving causal importance.
-
-## IV. Experiments and Results
-
-All reported result metrics in this section, along with the summary claims repeated in the Abstract and Conclusion, come from the generated artifacts under `results/research_study/` and `results/midseason_study/`. The primary comparison files are `results/research_study/model_comparison.csv` and `results/midseason_study/model_comparison.csv`; fold-level results are in `results/research_study/fold_metrics.csv` and `results/midseason_study/fold_metrics.csv`; per-class reports are in `results/research_study/attention_classification_report.csv`, `results/research_study/best_baseline_classification_report.csv`, `results/midseason_study/attention_classification_report.csv`, and `results/midseason_study/best_baseline_classification_report.csv`; fairness audit values are in `results/research_study/market_fairness.json` and `results/midseason_study/market_fairness.json`.
-
-### A. Dataset Characteristics
-
-Table I shows the class distribution, derived from `data/processed/features_research.csv` and mirrored in `data/processed/features_midseason.csv`. The Missed Playoffs class dominates with 46.6% of team-seasons, while Champion and Finals Loss each have only 3.3%. This distribution explains why accuracy alone is insufficient: a naive classifier that always predicts Missed Playoffs would achieve 46.6% accuracy while failing completely on the outcomes that matter most to analysts and fans.
-
-TABLE I. Class Distribution Across 629 Team-Seasons
+We define six ordered playoff-depth labels:
 
 | Class | Outcome | Count | Share |
-|---|---|---|---|
+| ---: | --- | ---: | ---: |
 | 0 | Missed Playoffs | 293 | 46.6% |
 | 1 | First Round Exit | 168 | 26.7% |
 | 2 | Second Round Exit | 84 | 13.4% |
@@ -143,31 +58,74 @@ TABLE I. Class Distribution Across 629 Team-Seasons
 | 4 | Finals Loss | 21 | 3.3% |
 | 5 | Champion | 21 | 3.3% |
 
-### B. Full Regular-Season Experiment
+We preserve the ordered playoff-depth scale because it carries more basketball meaning than a binary target. A second-round team and a champion are both playoff teams, but they imply different roster quality, strategic urgency, and championship probability. We also report macro F1 because accuracy alone can hide poor performance on rare labels such as Finals Loss and Champion.
 
-Table II presents the main results for the full-season setting. Random Forest achieves the best exact accuracy at 68.0% and the best top-2 accuracy at 84.3%. The MLP baseline achieves the highest macro F1 at 40.8%, suggesting better balance across minority classes. The attention model reaches 65.3% accuracy, 39.3% macro F1, and 82.5% top-2 accuracy, making it competitive while also producing interpretable roster-weight artifacts.
+![Class distribution imbalance](figures/class_distribution_imbalance.png)
 
-TABLE II. Full-Season Model Comparison (Out-of-Fold)
+Figure 1. We use this figure to show the severe imbalance in our six playoff-depth labels, with missed-playoff teams dominating the dataset and champions appearing only once per season. We generated it from the real processed feature artifacts and label counts summarized in `docs/real_results_summary.md`.
 
-| Model | Accuracy | Acc. Mean +/- SD | Macro F1 | Top-2 Acc. |
-|---|---|---|---|---|
+## Features
+
+We build three feature groups. First, we use team-level regular-season performance variables such as wins, losses, win percentage, points, rebounds, assists, steals, blocks, turnovers, field-goal percentage, three-point percentage, free-throw percentage, plus/minus, offensive rating, defensive rating, net rating, and pace. These features capture team strength and playing style.
+
+Second, we add contextual variables. We include a conference-strength proxy so the model can account for season-specific Eastern and Western Conference context. We also include roster continuity because a stable rotation may make regular-season performance more predictive than a team assembled late through trades or disrupted by injuries.
+
+Third, we represent the top eight rotation players by minutes played. For slots P1 through P8, we include production and efficiency variables such as points, rebounds, assists, steals, blocks, minutes, shooting efficiency, and an approximate PER-style impact summary. This fixed roster representation lets every model see not just how the team performed overall, but how production was distributed across the rotation.
+
+We standardize numeric features inside each training fold so that held-out seasons do not leak into preprocessing. The full-season and mid-season datasets keep identical feature schemas, which lets us compare performance changes directly.
+
+## Models
+
+We compare four models:
+
+| Model | Purpose in our project |
+| --- | --- |
+| Logistic Regression | We use it as a simple linear baseline with interpretable class boundaries. |
+| Random Forest | We use it as a strong non-linear tabular baseline that handles feature interactions well. |
+| MLP Baseline | We use it as a neural baseline over the flattened feature vector. |
+| Attention Model | We use it as our roster-aware neural model with learned weights over top-eight player slots. |
+
+The attention model separates team/context features from player-slot features. It projects each player slot into a learned representation, computes attention weights across the eight slots, pools the weighted roster representation, and concatenates that representation with the team/context vector before classification. This architecture lets our project ask whether explicit roster structure improves forecasting and gives us an interpretable artifact: learned attention weights by rotation slot.
+
+We train neural models with Adam at learning rate 0.001. The committed full-season and mid-season runs use 150 epochs for the MLP baseline and 200 epochs for the attention model, with random seed 42. We keep hyperparameter search lightweight because the dataset is small and season-level overfitting is a serious risk.
+
+## Validation And Evaluation
+
+We use leave-one-season-out cross-validation for both settings. In each fold, we hold out one NBA season, train on all other seasons, fit preprocessing only on the training fold, and evaluate on the held-out season. We then aggregate out-of-fold predictions across all 629 team-seasons.
+
+We report exact accuracy, macro F1, and top-2 accuracy. Exact accuracy measures whether the model predicts the precise playoff-depth class. Macro F1 gives equal weight to every class, so it exposes rare-class failures. Top-2 accuracy measures whether the true label appears in the model's two most likely classes, which matters because adjacent playoff-depth classes can be difficult to separate and still useful for tier-based decision-making.
+
+![Leave-one-season accuracy timeline](figures/leave_one_season_accuracy_timeline.png)
+
+Figure 2. We use this figure to track fold accuracy across held-out seasons, showing that model performance changes substantially from year to year. We generated it from the real fold-level metrics in `results/research_study/fold_metrics.csv`.
+
+![Fold metric variability boxplot](figures/fold_metric_variability_boxplot.png)
+
+Figure 3. We use this figure to summarize season-to-season variability in validation metrics, making the instability of a small seasonal dataset visible. We generated it from the real leave-one-season-out fold metrics saved under `results/research_study/`.
+
+## Results
+
+Our full-season experiment shows that the task is learnable but not solved. Random Forest achieves the best exact accuracy at 68.0% and the best top-2 accuracy at 84.3%. The MLP baseline achieves the best macro F1 at 40.8%, which means it handles the minority classes slightly better overall. The attention model reaches 65.3% accuracy, 39.3% macro F1, and 82.5% top-2 accuracy while also producing attention-weight diagnostics.
+
+| Model | Accuracy | Accuracy Mean +/- SD | Macro F1 | Top-2 Accuracy |
+| --- | ---: | ---: | ---: | ---: |
 | Logistic Regression | 60.9% | 60.9% +/- 7.6% | 38.0% | 81.4% |
 | Random Forest | 68.0% | 68.0% +/- 6.1% | 36.2% | 84.3% |
 | MLP Baseline | 62.8% | 62.8% +/- 6.6% | 40.8% | 81.7% |
 | Attention Model | 65.3% | 65.4% +/- 7.6% | 39.3% | 82.5% |
 
-The fold-level metrics show that performance varies substantially by season. For Random Forest, fold accuracy ranges from 56.7% in 2012-13 and 2022-23 to 80.0% in 2016-17. For the Attention Model, fold accuracy ranges from 50.0% in 2022-23 to 80.0% in 2016-17. The strongest season for macro F1 is also 2016-17: the MLP baseline reaches 68.2% macro F1 and the Attention Model reaches 68.1% macro F1. This does not mean the task is solved; rather, some seasons exhibit cleaner separation among playoff outcomes than others. Seasons with unusual playoff paths, injuries, trades, or compressed team quality naturally make this type of classifier less stable.
+![Full-season Random Forest and Attention results](figures/full_season_results_random_forest_attention.png)
 
-Top-2 accuracy is consistently much higher than exact accuracy across all models. Random Forest averages 84.3% top-2 accuracy, and the attention model averages 82.5%. This indicates that models often place teams near the correct playoff tier even when they miss the exact class. For practical applications such as media analysis or front-office planning, top-2 accuracy may be nearly as valuable as exact accuracy because it correctly identifies the neighborhood of outcomes.
+Figure 4. We use this figure to compare the strongest full-season accuracy model, Random Forest, with our interpretable Attention Model across the main metrics. We generated it from `results/research_study/model_comparison.csv`, which stores the real out-of-fold results.
 
-### C. Per-Class Analysis
+![Research confusion matrices](figures/research_confusion_matrices.png)
 
-Table III shows the per-class results for the Attention Model. The Missed Playoffs class is by far the easiest, with precision 0.908 and recall 0.904, because it has the most examples and is often separable by regular-season strength alone. First Round Exit is moderately learnable at precision 0.631 and recall 0.601. Conference Finals, Finals Loss, and Champion remain difficult because the number of examples is tiny and because elite teams can be separated by factors not fully represented in our feature matrix, such as injuries, matchup paths, trade timing, and late-season form.
+Figure 5. We use this figure to show confusion matrices for the full-season models and reveal that errors concentrate among neighboring playoff-depth classes. We generated it from the real out-of-fold predictions in `results/research_study/predictions.csv`.
 
-TABLE III. Attention Model Per-Class Results (Full Season)
+The full-season attention model performs best on Missed Playoffs, with precision 0.908, recall 0.904, and F1 0.906. It reaches F1 0.616 on First Round Exit and 0.358 on Second Round Exit, but it struggles on the rarest labels. In this run it scores F1 0.000 on Finals Loss and F1 0.261 on Champion, which confirms that a single finalist and champion per season create a difficult rare-class problem.
 
 | Class | Precision | Recall | F1 | Support |
-|---|---|---|---|---|
+| --- | ---: | ---: | ---: | ---: |
 | Missed Playoffs | 0.908 | 0.904 | 0.906 | 293 |
 | First Round Exit | 0.631 | 0.601 | 0.616 | 168 |
 | Second Round Exit | 0.372 | 0.345 | 0.358 | 84 |
@@ -175,136 +133,137 @@ TABLE III. Attention Model Per-Class Results (Full Season)
 | Finals Loss | 0.000 | 0.000 | 0.000 | 21 |
 | Champion | 0.240 | 0.286 | 0.261 | 21 |
 
-Notably, the attention model scores zero on Finals Loss in this run, indicating it did not successfully isolate losing finalists as a distinct class. Many such teams likely resemble champions, conference finalists, or other elite playoff teams in regular-season statistics. The macro average F1 of 0.393 reflects the severe difficulty of the rarest classes.
+![Per-class F1 attention vs baseline](figures/per_class_f1_attention_vs_baseline.png)
 
-The best baseline by macro F1 is the MLP Baseline. Its per-class results show higher recall on Champion (0.286) and Finals Loss (0.095) than the attention model, though both struggle with the rarest classes. The MLP baseline achieves precision 0.353 on Champion, compared to the attention model's 0.240, suggesting that the simpler neural network finds somewhat better decision boundaries for the champion class.
+Figure 6. We use this figure to compare per-class F1 for the attention model against the best baseline by macro F1, making the rare-class tradeoffs easier to inspect. We generated it from `results/research_study/attention_classification_report.csv` and `results/research_study/best_baseline_classification_report.csv`.
 
-### D. Mid-Season Forecasting Extension
+![Ordered error by class heatmap](figures/ordered_error_by_class_heatmap.png)
 
-We also evaluate a harder setting that uses only statistics available around season-specific All-Star-break proxy dates. The label remains the final postseason outcome, so the task asks whether partial-season information can forecast eventual playoff depth. This setting is more realistic for trade-deadline decisions because front offices must evaluate their contender status with incomplete information.
+Figure 7. We use this figure to visualize how far predictions move across the ordered playoff-depth scale rather than treating every mistake as equally distant. We generated it from the real full-season prediction artifacts and the ordered label definitions.
 
-TABLE IV. Mid-Season Model Comparison (Out-of-Fold)
+We also evaluate the mid-season setting. All models lose information because we restrict features to All-Star-break proxy cutoffs, but the results remain meaningful. Random Forest and the Attention Model tie for best exact accuracy at 60.4%. The Attention Model achieves the best macro F1 at 37.1%, and Random Forest achieves the best top-2 accuracy at 81.9%.
 
-| Model | Accuracy | Acc. Mean +/- SD | Macro F1 | Top-2 Acc. |
-|---|---|---|---|---|
+| Model | Accuracy | Accuracy Mean +/- SD | Macro F1 | Top-2 Accuracy |
+| --- | ---: | ---: | ---: | ---: |
 | Logistic Regression | 54.8% | 54.8% +/- 7.7% | 32.4% | 74.1% |
 | Random Forest | 60.4% | 60.4% +/- 4.2% | 28.6% | 81.9% |
 | MLP Baseline | 57.9% | 57.9% +/- 8.1% | 32.6% | 77.6% |
 | Attention Model | 60.4% | 60.4% +/- 9.4% | 37.1% | 80.1% |
 
-All models lose accuracy in the mid-season setting, which is expected because features contain less information. Random Forest and the Attention Model tie for best exact accuracy at 60.4%. The Attention Model achieves the best macro F1 at 37.1% and has the smallest macro-F1 drop from full-season to mid-season (only 2.2 percentage points), suggesting its roster-aware representation retains more signal when team aggregates are noisier. Random Forest remains strongest on top-2 accuracy at 81.9%.
+![Mid-season confusion matrices](figures_midseason/midseason_confusion_matrices.png)
 
-The mid-season per-class results show that all models struggle more with every class. The attention model's Champion precision drops from 0.240 in the full-season setting to 0.185 in the mid-season setting, while its recall drops from 0.286 to 0.238. This confirms that champion prediction requires as much regular-season data as possible.
+Figure 8. We use this figure to show the mid-season confusion matrices and illustrate how prediction errors increase when we remove late-season information. We generated it from `results/midseason_study/predictions.csv`, which contains real out-of-fold predictions for all 629 team-seasons.
 
-### E. Comparison Across Settings
+![Full vs mid-season metric drop](figures/full_vs_midseason_metric_drop.png)
 
-Table V summarizes the performance change from full-season to mid-season. All four models lose exact accuracy and macro F1. The Attention Model has the smallest macro-F1 decline (2.2 points), while Random Forest suffers the largest macro-F1 decline (7.7 points). This pattern suggests that the attention mechanism's explicit roster modeling provides some robustness when aggregate team statistics are noisier, because player-level patterns may stabilize earlier in the season than team-level summaries.
+Figure 9. We use this figure to compare full-season and mid-season metric changes, showing that every model declines when we limit the feature window. We generated it from the real full-season and mid-season `model_comparison.csv` files.
 
-TABLE V. Full-Season vs. Mid-Season Performance Change
+The attention model has the smallest macro-F1 drop from full-season to mid-season, falling only 2.3 percentage points from 39.3% to 37.1%. Random Forest loses 7.7 macro-F1 points, Logistic Regression loses 5.7 points, and the MLP baseline loses 8.2 points. We interpret this as evidence that explicit roster structure remains useful when team-level aggregates are noisier earlier in the season.
 
-| Model | Acc. Change | Macro F1 Change | Top-2 Change |
-|---|---|---|---|
-| Logistic Regression | -6.0% | -5.7% | -7.3% |
-| Random Forest | -7.6% | -7.7% | -2.4% |
-| MLP Baseline | -4.9% | -8.2% | -4.1% |
-| Attention Model | -4.9% | -2.2% | -2.4% |
+## Interpretability
 
-### F. Visual Diagnostics
+We use attention weights to inspect how the model uses top-eight rotation slots. These weights do not prove causal player value, but they show which roster slots the model emphasizes when it builds the pooled roster representation. In our runs, the first few rotation slots generally receive higher attention, which matches the basketball intuition that high-end talent matters heavily in the playoffs. Later slots still receive nonzero weight, so our model also recognizes that depth and balance contribute to playoff outcomes.
 
-The confusion matrices for all models reveal that mistakes often occur between adjacent playoff-depth tiers, as shown in `docs/figures/research_confusion_matrices.png` and `docs/figures_midseason/midseason_confusion_matrices.png`. Models rarely confuse Missed Playoffs with Champion, but they frequently confuse Conference Finals with Second Round Exit or Finals Loss. This pattern is consistent with the intuition that teams near the top are statistically similar in regular-season metrics and are separated by factors such as playoff experience, clutch performance, and matchup luck that our features do not capture.
+![Research attention weights](figures/research_attention_weights.png)
 
-The attention weight profiles in `docs/figures/research_attention_weights.png` and `docs/figures_midseason/midseason_attention_weights.png` show that the model does not weight every roster slot equally. The first two to three slots typically receive higher weights, consistent with the intuition that high-end talent matters disproportionately for playoff success. Later slots still contribute non-negligible weight, suggesting depth and balance also play a role. This pattern supports our original hypothesis that roster structure matters beyond team aggregates.
+Figure 10. We use this figure to show the full-season attention model's learned average weights across the top-eight rotation slots. We generated it from the trained attention model diagnostics created by the real full-season study pipeline.
 
-The t-SNE projections in `docs/figures/research_tsne.png` and `docs/figures_midseason/midseason_tsne.png` show partial clustering: missed-playoff teams tend to separate from playoff teams, but the deepest playoff classes overlap substantially. This visualization confirms that the feature space has structure but that the rarest classes are not linearly separable, which explains why all models struggle with Champion and Finals Loss.
+![Mid-season attention weights](figures_midseason/midseason_attention_weights.png)
 
-## V. Discussion
+Figure 11. We use this figure to show the same attention-weight diagnostic for the mid-season model, allowing us to compare roster emphasis before the regular season ends. We generated it from the real mid-season attention artifacts in `results/midseason_study/` and `docs/figures_midseason/`.
 
-### A. Interpretability and Player Importance
+We also visualize team-season embeddings with t-SNE. These plots show that missed-playoff teams separate more clearly than the deepest playoff classes. Champions, Finals teams, and conference finalists overlap heavily, which explains why exact rare-class prediction remains difficult.
 
-The attention model provides learned roster weights across the top eight player slots. These weights offer a direct diagnostic: the model can assign different influence to different rotation positions rather than treating every player slot as equally important. While attention weights are not a perfect causal explanation, they do reveal how the roster representation informs predictions. In our runs, the attention model's predictive gain over simpler baselines is modest, but the interpretability artifact helps explain how roster information is being used. This aligns with findings in explainable sports analytics that model transparency matters for stakeholder trust [4, 12].
+![Research t-SNE projection](figures/research_tsne.png)
 
-For front offices, these weights could inform roster construction questions. If the model consistently assigns the highest weights to the first two rotation slots, this supports the conventional wisdom that acquiring star talent is the most reliable path to contention. If later slots receive substantial weight, this suggests that depth upgrades may also move the needle. We caution that these interpretations are post-hoc and correlational; the attention weights tell us which slots the model uses, not necessarily which slots causally determine success.
+Figure 12. We use this figure to project full-season team-season feature representations into two dimensions and color them by playoff-depth label. We generated it from the real full-season feature matrix and model visualization pipeline.
 
-### B. Fairness and Market-Size Audit
+![Research t-SNE cluster analysis](figures/research_tsne_cluster_analysis.png)
 
-We performed a coarse market-size audit using the attention model's predictions. We grouped teams into large-market and small-market buckets based on media market size and compared average actual labels, predicted labels, and absolute errors.
+Figure 13. We use this figure to add cluster-oriented analysis to the full-season t-SNE view, highlighting where playoff-depth groups separate and where they overlap. We generated it from the same real full-season feature artifacts used for the t-SNE diagnostic.
 
-In the full-season setting, the large-market average actual label is 1.257 while the small-market average actual label is 0.924. The large-market average predicted label is 1.305 while the small-market average predicted label is 0.988. The large-market average absolute error is 0.533, while the small-market average absolute error is 0.475, yielding an error gap of 0.058. In the mid-season setting, the gap widens: large-market error is 0.710 and small-market error is 0.556, for a gap of 0.153.
+![Mid-season t-SNE projection](figures_midseason/midseason_tsne.png)
 
-The predictions track the direction of actual group means: large-market teams have a higher average actual label and a higher average predicted label. We do not claim this establishes causal fairness; market size is a coarse proxy, and playoff success itself is not distributed evenly across markets. However, the full-season gap of 0.058 is small enough that the model does not appear to grossly favor large-market teams. The widening gap in the mid-season setting suggests that when data is sparser, structural advantages may be harder to disentangle from performance signals. Future work should conduct more comprehensive fairness audits using demographic and economic variables beyond market size.
+Figure 14. We use this figure to project mid-season team-season features and show that partial-season data preserves some structure while increasing overlap among playoff teams. We generated it from `data/processed/features_midseason.csv` and the mid-season visualization pipeline.
 
-### C. Limitations
+## Finals And Champion Diagnostics
 
-Our project has several limitations that we address transparently. First, the class distribution is highly imbalanced, with only one champion and one finals loser per season. Even with 21 seasons, the rarest classes have only 21 examples each. Techniques such as SMOTE [14] or ADASYN [16] could be explored in future work, though temporal structure complicates their application. Second, the sample size is modest for a six-class forecasting problem. Third, the primary framing uses full regular-season statistics, so results should be interpreted as season-level forecasting rather than a strict mid-season prediction task. Fourth, contextual features such as roster continuity and conference strength are useful but still relatively simple compared with a production sports analytics system. Fifth, hyperparameter search was intentionally lightweight to preserve reproducibility and avoid overfitting the small dataset. Sixth, the fixed top-eight rotation representation may miss information from injuries, late-season rotation changes, and bench contributors outside the selected slots. Seventh, the player-level features are box-score and efficiency summaries, not play-by-play, lineup, matchup, or tracking data. Eighth, the market-size audit is a sanity check, not a complete fairness framework. It does not establish causal fairness or account for all structural differences among teams.
+Because the Finals Loss and Champion classes have only 21 examples each, we add dedicated diagnostics for those labels. These figures help us inspect whether models recognize the deepest playoff teams or merely classify most elite teams into nearby classes. We treat these plots as error-analysis artifacts rather than claims that the model can reliably identify champions.
 
-### D. Threats to Validity
+![Finals team prediction heatmap](figures/finals_team_prediction_heatmap.png)
 
-External validity is limited because the NBA is a single league with unique rules, schedule structures, and playoff formats. Our findings may not transfer directly to other sports or leagues. Internal validity is strengthened by the season-aware validation protocol but weakened by the small sample size per class. Construct validity is supported by using standard basketball metrics that analysts and coaches recognize, but advanced tracking data might capture player value more accurately than box-score approximations. Statistical conclusion validity is adequate for the dominant classes but weak for Champion and Finals Loss due to sample size.
+Figure 15. We use this figure to show how models predicted teams that reached the Finals, making champion and finalist confusion visible at the team level. We generated it from the real full-season out-of-fold predictions and final playoff labels.
 
-### E. Future Work
+![Finals case study predictions](figures/finals_case_study_predictions.png)
 
-Several directions could extend our project. First, incorporating play-by-play or tracking data would provide richer player representations than box-score summaries alone. Second, modeling playoff matchups explicitly rather than treating each team independently could improve predictions because playoff paths depend on opponent seeding. Third, applying temporal models such as LSTMs or Transformers to within-season game sequences could capture momentum and form changes that our aggregate features miss. Fourth, exploring advanced imbalance techniques tailored to temporal data could improve rare-class performance. Fifth, a more comprehensive fairness framework using player demographics and team payroll data would address equity more rigorously.
+Figure 16. We use this figure to present specific Finals-team prediction cases so we can inspect when the models placed elite teams in the correct or adjacent outcome classes. We generated it from the real prediction rows in `results/research_study/predictions.csv`.
 
-## VI. Conclusion
+![Finals detection by model](figures/finals_detection_by_model.png)
 
-We presented a reproducible deep learning study on forecasting NBA postseason depth from regular-season team and rotation statistics. Our attention-based model learns which rotation players matter most and combines roster information with team and contextual features. Under leave-one-season-out cross-validation on 21 seasons, we found that random forest delivers the strongest exact accuracy, the MLP baseline achieves the best macro F1, and the attention model remains competitive while adding interpretable player-importance weights. Top-2 accuracy exceeds 81% for every model, indicating that models often rank plausible postseason outcomes well even when they miss the exact class.
+Figure 17. We use this figure to compare how well each model detects the deepest playoff outcomes, emphasizing the gap between overall accuracy and rare-class recognition. We generated it from the real full-season classification outputs and label-filtered prediction artifacts.
 
-The mid-season extension confirmed that forecasting becomes harder when features are limited to partial-season information. Even there, the attention model tied for best exact accuracy and achieved the best macro F1 among tested models, with the smallest performance drop from full-season to mid-season.
+## Fairness Audit
 
-The central empirical lesson is that regular-season team quality is predictive, but not enough to reliably identify the NBA champion as a distinct class. Championship outcomes are influenced by a small number of games, matchup paths, injuries, and player availability that regular-season statistics cannot fully capture. Our project contributes a reproducible benchmark, an interpretable attention architecture for roster modeling, and a transparent discussion of limitations that future work can build upon.
+We include a coarse market-size fairness audit using the attention model's predictions. We group teams into large-market and small-market buckets and compare actual mean label, predicted mean label, and average absolute error. We do not claim this audit proves fairness because market size is only one proxy and playoff success itself is not evenly distributed across markets. We use it as a sanity check and as a reminder that sports models can absorb structural patterns from the league.
 
-## ACKNOWLEDGMENT
+For the full-season setting, large-market teams have average actual label 1.257, average predicted label 1.305, and average absolute error 0.533. Small-market teams have average actual label 0.924, average predicted label 0.988, and average absolute error 0.475. The full-season error gap is 0.058. For the mid-season setting, the large-market error is 0.710, the small-market error is 0.556, and the error gap widens to 0.153.
 
-We thank the course instructors of Deep Learning at the University of Colorado Denver for guidance throughout this project. We also acknowledge the nba_api project maintainers for providing open access to NBA statistics.
+![Market-size fairness audit](figures/market_size_fairness_audit.png)
 
-## REFERENCES
+Figure 18. We use this figure to summarize the market-size audit by comparing prediction error across large-market and small-market teams. We generated it from the real fairness JSON artifacts in `results/research_study/market_fairness.json` and `results/midseason_study/market_fairness.json`.
 
-[1] R. Khanmohammadi, S. Saba-Sadiya, S. Esfandiarpour, T. Alhanai, and M. M. Ghassemi, "MambaNet: A hybrid neural network for predicting the NBA playoffs," SN Comput. Sci., vol. 5, no. 5, 2024.
+## Generated Artifacts
 
-[2] K. Zhao, C. Du, and G. Tan, "Enhancing basketball game outcome prediction through fused graph convolutional networks and random forest algorithm," Entropy, vol. 25, no. 5, 2023.
+Our project generates and commits reproducible artifacts so reviewers can inspect the results without rerunning the full pipeline. The primary full-season artifacts are `results/research_study/model_comparison.csv`, `summary_metrics.json`, `fold_metrics.csv`, `predictions.csv`, `attention_classification_report.csv`, `best_baseline_classification_report.csv`, and `market_fairness.json`. The parallel mid-season artifacts live in `results/midseason_study/` with the same filenames.
+
+The full-season figures live in `docs/figures/`, and the mid-season figures live in `docs/figures_midseason/`. We can regenerate the additional presentation figures with `.\.venv\Scripts\python.exe scripts\generate_additional_figures.py`. We can reproduce the full research run with `python run_research_study.py --epochs-mlp 150 --epochs-attention 200 --lr 0.001 --seed 42`, and we can reproduce the mid-season run with `python run_midseason_study.py --epochs-mlp 150 --epochs-attention 200 --lr 0.001 --seed 42`.
+
+# Limitations
+
+Our project has several limitations. First, the dataset remains small for a six-class deep learning task because each season contributes only one champion and one Finals loser. Even across 21 seasons, the rarest classes have only 21 examples each, so macro F1 and rare-class diagnostics matter more than headline accuracy.
+
+Second, our features summarize box-score production, advanced efficiency, roster continuity, conference context, and top-eight rotation players, but they do not include play-by-play, tracking data, lineup combinations, salary, injuries, rest, playoff matchup paths, coaching adjustments, or late-series tactical changes. Those missing signals likely explain many errors among champions, finalists, and conference finalists. Our mid-season setting also cannot know later trades, injuries, rotation changes, or late-season form.
+
+Third, our attention weights are interpretable but not causal. They tell us which rotation slots the model used, not which players caused wins or playoff advancement. Analysts should therefore treat the attention plots as model diagnostics, not as player rankings.
+
+Fourth, our market-size audit is intentionally narrow. We do not encode player demographics, race, nationality, salary, endorsement value, or media popularity, but team-level sports data can still reflect structural inequalities. We audit large-market and small-market errors as a basic check, but a full fairness study would need richer variables, stakeholder review, and clearer definitions of harm.
+
+Fifth, we keep hyperparameter tuning modest to protect reproducibility and reduce overfitting. A larger production study could explore calibrated probabilities, temporal models, matchup-aware playoff simulations, richer player embeddings, imbalance-aware losses, and season-aware oversampling methods inspired by SMOTE [12] and ADASYN [14]. Our strongest conclusion is therefore measured: regular-season and rotation statistics contain real playoff-depth signal, but they do not reliably identify NBA champions as a distinct class.
+
+## Acknowledgment
+
+We thank the course instructors of Deep Learning at the University of Colorado Denver for guidance throughout our project. We also acknowledge the `nba_api` project maintainers for providing open access to NBA statistics.
+
+## References
+
+[1] R. Khanmohammadi, S. Saba-Sadiya, S. Esfandiarpour, T. Alhanai, and M. M. Ghassemi, "MambaNet: A hybrid neural network for predicting the NBA playoffs," SN Comput. Sci., vol. 5, no. 5, 2024, doi: 10.1007/s42979-024-02977-0.
+
+[2] K. Zhao, C. Du, and G. Tan, "Enhancing basketball game outcome prediction through fused graph convolutional networks and random forest algorithm," Entropy, vol. 25, no. 5, 2023, doi: 10.3390/e25050765.
 
 [3] W. Guan, N. Javed, and P. Lu, "NBA2Vec: Dense feature representations of NBA players," arXiv:2302.13386, 2023.
 
-[4] Y. Ouyang et al., "Integration of machine learning XGBoost and SHAP models for NBA game outcome prediction," PLoS ONE, vol. 19, no. 7, e0307478, 2024.
+[4] Y. Ouyang et al., "Integration of machine learning XGBoost and SHAP models for NBA game outcome prediction," PLoS ONE, vol. 19, no. 7, e0307478, 2024, doi: 10.1371/journal.pone.0307478.
 
-[5] C. Rios, L. Han, A. Baimagambetov, and N. Polatidis, "Long sequence LSTM modeling for NBA game outcome prediction," arXiv:2512.08591, 2025.
+[5] C. Rios, L. Han, A. Baimagambetov, and N. Polatidis, "Long-sequence LSTM modeling for NBA game outcome prediction using a novel multi-season dataset," arXiv:2512.08591, 2025, doi: 10.48550/arXiv.2512.08591.
 
-[6] S. Z. Ibrahim et al., "Machine learning insights into basketball championship predictions: An analytical comparison," in Proc. ICITS, Springer, 2024.
+[6] S. Z. Ibrahim, A. M. Reza, L. W. Kean, N. A. Ab. Aziz, and S. N. M. Sayed Ismail, "Machine learning insights into basketball championship predictions: An analytical comparison," in Lecture Notes in Bioengineering, Springer, 2024, pp. 275-285, doi: 10.1007/978-981-97-3741-3_26.
 
-[7] G. D. S. Teno, C. Wang, N. Carlsson, and P. Lambrix, "Predicting season outcomes for the NBA," in Machine Learning and Data Mining for Sports Analytics, ser. LNCS, vol. 1571, Springer, 2022, pp. 129-142.
+[7] G. D. S. Teno, C. Wang, N. Carlsson, and P. Lambrix, "Predicting season outcomes for the NBA," in Machine Learning and Data Mining for Sports Analytics, Springer, 2022, pp. 129-142, doi: 10.1007/978-3-031-02044-5_11.
 
-[8] R. P. Bunker and F. Thabtah, "A machine learning framework for sport result prediction," Appl. Comput. Inform., vol. 15, no. 1, pp. 27-33, 2019.
+[8] R. P. Bunker and F. Thabtah, "A machine learning framework for sport result prediction," Appl. Comput. Inform., vol. 15, no. 1, pp. 27-33, 2019, doi: 10.1016/j.aci.2017.09.005.
 
-[9] M. Yeung, "Multiple machine learning algorithms-based NBA team playoffs prediction," ITM Web Conf., vol. 70, 04024, 2025.
+[9] M. Yeung, "Multiple machine learning algorithms-based NBA team playoffs prediction," ITM Web Conf., vol. 70, 04024, 2025, doi: 10.1051/itmconf/20257004024.
 
 [10] J. Perricone, S. Shaw, and J. Swiechowicz, "Predicting results for professional basketball using NBA API data," Stanford Univ., Stanford, CA, USA, Tech. Rep. CS229, 2016.
 
-[11] Y. Ni and S. Lee, "A comparative study of machine learning models for NCAA men's basketball tournament games outcome prediction," J. Prediction Markets, vol. 17, no. 2, pp. 3-34, 2023.
+[11] Y. Wang, W. Liu, and X. Liu, "Explainable AI techniques with application to NBA gameplay prediction," Neurocomputing, vol. 483, pp. 59-71, 2022, doi: 10.1016/j.neucom.2022.01.098.
 
-[12] Y. Wang, W. Liu, and X. Liu, "Explainable AI techniques with application to NBA gameplay prediction," Neurocomputing, vol. 483, pp. 59-71, 2022.
+[12] N. V. Chawla, K. W. Bowyer, L. O. Hall, and W. P. Kegelmeyer, "SMOTE: Synthetic minority over-sampling technique," J. Artif. Intell. Res., vol. 16, pp. 321-357, 2002, doi: 10.1613/jair.953.
 
-[13] M. Tsagris, C. Adam, and P. Pantatosakis, "On predicting an NBA game outcome from half-time statistics," Discov. Artif. Intell., vol. 4, 111, 2024.
+[13] D. Elreedy and A. F. Atiya, "A comprehensive analysis of synthetic minority oversampling technique (SMOTE) for handling class imbalance," Inf. Sci., vol. 505, pp. 32-64, 2019, doi: 10.1016/j.ins.2019.07.070.
 
-[14] N. V. Chawla, K. W. Bowyer, L. O. Hall, and W. P. Kegelmeyer, "SMOTE: Synthetic minority over-sampling technique," J. Artif. Intell. Res., vol. 16, pp. 321-357, 2002.
+[14] H. He, Y. Bai, E. A. Garcia, and S. Li, "ADASYN: Adaptive synthetic sampling approach for imbalanced learning," in Proc. IEEE Int. Joint Conf. Neural Networks, 2008, pp. 1322-1328, doi: 10.1109/IJCNN.2008.4633969.
 
-[15] D. Elreedy and A. F. Atiya, "A comprehensive analysis of synthetic minority oversampling technique (SMOTE) for handling class imbalance," Inf. Sci., vol. 505, pp. 32-64, 2019.
+[15] A. Vaswani et al., "Attention is all you need," in Proc. 31st Conf. Neural Inf. Process. Syst., 2017, pp. 5998-6008.
 
-[16] H. He, Y. Bai, E. A. Garcia, and S. Li, "ADASYN: Adaptive synthetic sampling approach for imbalanced learning," in Proc. IEEE Int. Joint Conf. Neural Networks, 2008, pp. 1322-1328.
-
-[17] A. Vaswani et al., "Attention is all you need," in Proc. 31st Conf. Neural Inf. Process. Syst., 2017, pp. 5998-6008.
-
-[18] P. Mokha, "nba_api: An API client package to access NBA.com API," GitHub repository, 2018. [Online]. Available: https://github.com/swar/nba_api
-
-[19] Z. Zhu, "High dimensional sports statistics and machine learning in NBA," Adv. Eng. Innov., vol. 11, pp. 78-94, 2024.
-
-[20] M. Pietraszewski et al., "The role of artificial intelligence in sports analytics: A systematic review and meta-analysis of performance trends," Appl. Sci., vol. 15, 7254, 2025.
-
-[21] N. Paine, "How our NBA predictions work," FiveThirtyEight, 2018. [Online]. Available: https://fivethirtyeight.com/methodology/how-our-nba-predictions-work/
-
-[22] M. J. Dixon and S. G. Coles, "Modelling association football scores and inefficiencies in the football betting market," J. R. Stat. Soc. Ser. C Appl. Stat., vol. 46, pp. 265-280, 1997.
-
-[23] J. G. Claudino et al., "Current approaches to the use of artificial intelligence for injury risk assessment and performance prediction in team sports: A systematic review," Sports Med. Open, vol. 5, 28, 2019.
-
-[24] M. Naughton, P. M. Salmon, H. R. Compton, and S. McLean, "Challenges and opportunities of artificial intelligence implementation within sports science and sports medicine teams," Front. Sports Act. Living, vol. 6, 2024.
-
-[25] T. Xu and S. Baghaei, "Reshaping the future of sports with artificial intelligence: Challenges and opportunities in performance enhancement, fan engagement, and strategic decision-making," Eng. Appl. Artif. Intell., vol. 142, 109912, 2025.
+[16] P. Mokha, "nba_api: An API client package to access NBA.com APIs," GitHub repository, 2018. [Online]. Available: https://github.com/swar/nba_api
