@@ -3,6 +3,9 @@ param(
     [string]$Mode = "demo"
 )
 
+# Syntax-check on execution-policy-restricted Windows hosts:
+# powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax"
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "NBA Championship Prediction Project Runner"

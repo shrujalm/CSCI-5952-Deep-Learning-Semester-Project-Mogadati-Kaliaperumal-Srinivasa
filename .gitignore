@@ -1,5 +1,7 @@
 __pycache__/
 *.py[cod]
+.venv/
 .ipynb_checkpoints/
 data/raw/
+demo_outputs/
 outputs/

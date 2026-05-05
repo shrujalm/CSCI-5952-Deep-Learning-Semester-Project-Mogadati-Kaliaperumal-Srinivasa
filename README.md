@@ -176,6 +176,12 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run_project.ps1 demo
 ```
 
+Optional syntax check on execution-policy-restricted hosts:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax"
+```
+
 ### 1. Install dependencies
 
 ```bash
