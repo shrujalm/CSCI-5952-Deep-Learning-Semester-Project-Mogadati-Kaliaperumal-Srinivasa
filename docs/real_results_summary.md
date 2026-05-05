@@ -214,6 +214,13 @@ Full regular-season figures:
 - `docs/figures/finals_case_study_predictions.png`
 - `docs/figures/finals_detection_by_model.png`
 - `docs/figures/full_season_results_random_forest_attention.png`
+- `docs/figures/class_distribution_imbalance.png`
+- `docs/figures/leave_one_season_accuracy_timeline.png`
+- `docs/figures/fold_metric_variability_boxplot.png`
+- `docs/figures/full_vs_midseason_metric_drop.png`
+- `docs/figures/per_class_f1_attention_vs_baseline.png`
+- `docs/figures/ordered_error_by_class_heatmap.png`
+- `docs/figures/market_size_fairness_audit.png`
 
 Mid-season figures:
 
