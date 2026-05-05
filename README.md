@@ -247,6 +247,12 @@ The repository already includes the main outputs from a completed real-data run,
 - Mid-season metrics and predictions: `results/midseason_study/`
 - Cached raw source tables: `data/raw/`
 
+Additional presentation figures can be regenerated from the committed real-data artifacts:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_additional_figures.py
+```
+
 ## Reproducibility Notes
 
 - The committed report and metrics were generated from the real historical dataset.

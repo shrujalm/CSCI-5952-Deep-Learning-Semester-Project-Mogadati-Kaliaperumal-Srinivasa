@@ -209,9 +209,20 @@ Full regular-season figures:
 - `docs/figures/research_confusion_matrices.png`
 - `docs/figures/research_attention_weights.png`
 - `docs/figures/research_tsne.png`
+- `docs/figures/research_tsne_cluster_analysis.png`
+- `docs/figures/finals_team_prediction_heatmap.png`
+- `docs/figures/finals_case_study_predictions.png`
+- `docs/figures/finals_detection_by_model.png`
+- `docs/figures/full_season_results_random_forest_attention.png`
 
 Mid-season figures:
 
 - `docs/figures_midseason/midseason_confusion_matrices.png`
 - `docs/figures_midseason/midseason_attention_weights.png`
 - `docs/figures_midseason/midseason_tsne.png`
+
+Additional presentation figures can be regenerated with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_additional_figures.py
+```
