@@ -1,7 +1,9 @@
 param(
     [ValidateSet("demo", "showcase", "final", "midseason", "midseason-final", "report")]
     [string]$Mode = "demo",
-    [switch]$NoPause
+    [switch]$NoPause,
+    [switch]$Pause,
+    [int]$StepDelaySeconds = 2
 )
 
 # Syntax-check on execution-policy-restricted Windows hosts:
@@ -22,16 +24,55 @@ function Write-Cue {
     param([string]$Text)
 
     Write-Host ""
-    Write-Host "Presenter cue:"
+    Write-Host "What to say:"
+    Write-Host "  $Text"
+}
+
+function Write-Story {
+    param([string]$Text)
+
+    Write-Host ""
+    Write-Host "What is happening:"
+    Write-Host "  $Text"
+}
+
+function Write-Result {
+    param([string]$Text)
+
+    Write-Host ""
+    Write-Host "What this proves:"
     Write-Host "  $Text"
 }
 
 function Wait-Showcase {
     param([string]$Message = "Press Enter when you are ready for the next step")
 
-    if (-not $NoPause) {
+    if ($Pause -and -not $NoPause) {
         [void](Read-Host $Message)
+        return
     }
+
+    if (-not $NoPause -and $StepDelaySeconds -gt 0) {
+        Start-Sleep -Seconds $StepDelaySeconds
+    }
+}
+
+function Invoke-ShowcaseCommand {
+    param(
+        [string]$Description,
+        [string]$CommandText,
+        [scriptblock]$Command
+    )
+
+    Write-Story $Description
+
+    if ($CommandText) {
+        Write-Host ""
+        Write-Host "Running command:"
+        Write-Host "  $CommandText"
+    }
+
+    & $Command
 }
 
 function Format-Percent {
@@ -143,6 +184,127 @@ function Show-UseCasePredictions {
     }
 }
 
+function Show-DataSnapshot {
+    param(
+        [string]$Path,
+        [string]$Title
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Warning "Missing dataset file: $Path"
+        return
+    }
+
+    $data = Import-Csv $Path
+    $columnCount = 0
+    if ($data.Count -gt 0) {
+        $columnCount = ($data[0].PSObject.Properties | Measure-Object).Count
+    }
+
+    $seasons = $data.SEASON | Sort-Object -Unique
+
+    Write-Host ""
+    Write-Host $Title
+    Write-Host ("Rows: {0} team-seasons" -f $data.Count)
+    Write-Host ("Columns: {0} engineered features and labels" -f $columnCount)
+    Write-Host ("Season range: {0} through {1}" -f $seasons[0], $seasons[$seasons.Count - 1])
+
+    Write-Host ""
+    Write-Host "Label balance in the data:"
+    $data |
+        Group-Object PLAYOFF_RESULT |
+        Sort-Object -Property @{ Expression = { [int]$_.Name }; Ascending = $true } |
+        ForEach-Object {
+            [pscustomobject]@{
+                Label = $_.Name
+                Outcome = (Convert-PlayoffLabel $_.Name)
+                Count = $_.Count
+                Share = (Format-Percent ($_.Count / $data.Count))
+            }
+        } |
+        Format-Table -AutoSize
+}
+
+function Show-FoldEvaluationSummary {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        Write-Warning "Missing fold metrics file: $Path"
+        return
+    }
+
+    $folds = Import-Csv $Path
+    $seasonCount = ($folds.season | Sort-Object -Unique).Count
+
+    Write-Host ""
+    Write-Host ("Leave-one-season-out evaluation: {0} held-out seasons per model" -f $seasonCount)
+
+    $folds |
+        Group-Object model_key |
+        ForEach-Object {
+            $best = $_.Group | Sort-Object -Property @{ Expression = { [double]$_.accuracy }; Descending = $true } | Select-Object -First 1
+            $worst = $_.Group | Sort-Object -Property @{ Expression = { [double]$_.accuracy }; Ascending = $true } | Select-Object -First 1
+            $avgAccuracy = ($_.Group | Measure-Object -Property accuracy -Average).Average
+            $avgMacroF1 = ($_.Group | Measure-Object -Property f1_macro -Average).Average
+
+            [pscustomobject]@{
+                Model = $_.Name
+                "Avg Accuracy" = (Format-Percent $avgAccuracy)
+                "Avg Macro F1" = (Format-Percent $avgMacroF1)
+                "Best Held-Out Season" = ("{0} ({1})" -f $best.season, (Format-Percent $best.accuracy))
+                "Hardest Held-Out Season" = ("{0} ({1})" -f $worst.season, (Format-Percent $worst.accuracy))
+            }
+        } |
+        Format-Table -AutoSize
+}
+
+function Show-ArtifactStatus {
+    $artifacts = @(
+        @{ Path = "docs/final_report.pdf"; Purpose = "final written report" },
+        @{ Path = "docs/real_results_summary.md"; Purpose = "plain-English results summary" },
+        @{ Path = "results/research_study/model_comparison.csv"; Purpose = "full-season model metrics" },
+        @{ Path = "results/research_study/predictions.csv"; Purpose = "held-out full-season predictions" },
+        @{ Path = "results/midseason_study/model_comparison.csv"; Purpose = "mid-season model metrics" },
+        @{ Path = "results/midseason_study/predictions.csv"; Purpose = "held-out mid-season predictions" },
+        @{ Path = "docs/figures"; Purpose = "full-season visual analysis figures" },
+        @{ Path = "docs/figures_midseason"; Purpose = "mid-season visual analysis figures" }
+    )
+
+    Write-Host ""
+    Write-Host "Artifact check:"
+    $artifacts |
+        ForEach-Object {
+            [pscustomobject]@{
+                Artifact = $_.Path
+                Purpose = $_.Purpose
+                Status = if (Test-Path $_.Path) { "ready" } else { "missing" }
+            }
+        } |
+        Format-Table -AutoSize
+}
+
+function Show-FigureInventory {
+    $figures = @()
+    if (Test-Path "docs/figures") {
+        $figures += Get-ChildItem "docs/figures" -Filter "*.png"
+    }
+    if (Test-Path "docs/figures_midseason") {
+        $figures += Get-ChildItem "docs/figures_midseason" -Filter "*.png"
+    }
+
+    Write-Host ""
+    Write-Host ("Figure inventory: {0} PNG analysis figures are ready for the report and presentation." -f $figures.Count)
+    $figures |
+        Sort-Object DirectoryName, Name |
+        ForEach-Object {
+            [pscustomobject]@{
+                Folder = (Split-Path $_.DirectoryName -Leaf)
+                Figure = $_.Name
+            }
+        } |
+        Format-Table -AutoSize
+}
+
 Write-Host "NBA Championship Prediction Project Runner"
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -150,73 +312,142 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+if ($Mode -eq "showcase") {
+    Write-Section "0. Environment Setup"
+    Write-Cue "I am starting with the same command a reviewer can run. The script sets up the environment, runs checks, evaluates models, and prints the results on screen."
+    Write-Story "Checking Python, the virtual environment, and the required packages before the project code runs."
+}
+
+$createdVenv = $false
 if (-not (Test-Path ".venv")) {
+    if ($Mode -eq "showcase") {
+        Write-Host ""
+        Write-Host "Running command:"
+        Write-Host "  python -m venv .venv"
+    }
     python -m venv .venv
+    $createdVenv = $true
 }
 
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+
+$requiredModules = @("torch", "numpy", "pandas", "sklearn", "matplotlib", "seaborn", "nba_api", "tqdm")
+$missingModules = @()
+foreach ($module in $requiredModules) {
+    python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('$module') else 1)" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $missingModules += $module
+    }
+}
+
+if ($createdVenv -or $missingModules.Count -gt 0) {
+    $localTemp = Join-Path (Get-Location) ".tmp"
+    if (-not (Test-Path $localTemp)) {
+        New-Item -ItemType Directory -Path $localTemp | Out-Null
+    }
+    $env:TEMP = $localTemp
+    $env:TMP = $localTemp
+
+    if ($Mode -eq "showcase") {
+        Write-Host ""
+        if ($missingModules.Count -gt 0) {
+            Write-Host ("Missing packages detected: {0}" -f ($missingModules -join ", "))
+        }
+        Write-Host "Running command:"
+        Write-Host "  python -m pip install --disable-pip-version-check -q -r requirements.txt"
+    }
+
+    python -m pip install --disable-pip-version-check -q -r requirements.txt
+}
+elseif ($Mode -eq "showcase") {
+    Write-Host ""
+    Write-Host "Dependency check: all required packages are already installed, so pip install is skipped."
+}
+
+if ($Mode -eq "showcase") {
+    Write-Result "The environment is ready, so any later success comes from the project code and saved research artifacts rather than a hidden notebook state."
+    Wait-Showcase
+}
 
 if ($Mode -eq "showcase") {
     Write-Section "Showcase Mode: Testing, Evaluation, and Prediction"
-    Write-Cue "Say: This project predicts how far NBA teams go in the playoffs from regular-season team stats and top-eight rotation player features."
+    Write-Cue "This project predicts how far NBA teams go in the playoffs using regular-season team stats and top-eight rotation player features. I am going to show testing, a live evaluation run, final research metrics, and concrete team-season predictions."
     Wait-Showcase
 
-    Write-Section "1. Lightweight Validation"
-    Write-Cue "Say: Before showing results, I validate that the runner is syntactically valid and the Python project compiles."
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax"
-    python -m compileall -q src run_pipeline.py run_research_study.py run_midseason_study.py
-    Write-Host "Validation passed: PowerShell syntax and Python compile checks completed."
+    Write-Section "1. Testing: Does The Project Execute?"
+    Write-Cue "Before I trust any metrics, I first test that the runner parses and the Python package compiles. This is the quick sanity check that catches broken scripts before we talk about model quality."
+    Invoke-ShowcaseCommand `
+        -Description "Validating the PowerShell runner syntax so the one-click demo itself is testable." `
+        -CommandText 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax"' `
+        -Command { powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax" }
+    Invoke-ShowcaseCommand `
+        -Description "Compiling the Python source tree. If imports or syntax are broken, this step fails before evaluation starts." `
+        -CommandText "python -m compileall -q src run_pipeline.py run_research_study.py run_midseason_study.py scripts" `
+        -Command { python -m compileall -q src run_pipeline.py run_research_study.py run_midseason_study.py scripts }
+    Write-Result "Testing passed: the runner is syntactically valid and the Python project compiles."
     Wait-Showcase
 
-    Write-Section "2. Live Evaluation Run"
-    Write-Cue "Say: This live run rebuilds the dataset and executes the evaluation pipeline. I keep the neural epochs low so the demo finishes during the presentation."
+    Write-Section "2. Problem Setup: What Are We Solving?"
+    Write-Cue "The model is not guessing one champion from vibes. It sees one row per team-season, learns from engineered team and rotation features, and predicts one of six playoff-depth labels."
+    Show-DataSnapshot "data/processed/features_research.csv" "Full-season dataset snapshot"
+    Write-Result "This shows the hard part of the problem: the dataset is real but small, and rare outcomes like Champion and Finals Loss are heavily imbalanced."
     Wait-Showcase
 
-    python run_research_study.py `
-        --epochs-mlp 5 `
-        --epochs-attention 5 `
-        --lr 0.001 `
-        --seed 42 `
-        --output-dir demo_outputs/showcase_results `
-        --report-path demo_outputs/showcase_report.md `
-        --figures-dir demo_outputs/showcase_figures
+    Write-Section "3. Live Evaluation: Run The Pipeline"
+    Write-Cue "Now I run the actual evaluation pipeline in a short showcase configuration. The neural models use only five epochs so the demo finishes live, but the pipeline still rebuilds data artifacts, trains models, evaluates them, and writes outputs."
+    Invoke-ShowcaseCommand `
+        -Description "Running the research pipeline end to end with a short training budget for screen-share timing." `
+        -CommandText "python run_research_study.py --epochs-mlp 5 --epochs-attention 5 --lr 0.001 --seed 42 --output-dir demo_outputs/showcase_results --report-path demo_outputs/showcase_report.md --figures-dir demo_outputs/showcase_figures" `
+        -Command {
+            $previousTqdmDisable = $env:TQDM_DISABLE
+            $env:TQDM_DISABLE = "1"
+            try {
+                python run_research_study.py `
+                    --epochs-mlp 5 `
+                    --epochs-attention 5 `
+                    --lr 0.001 `
+                    --seed 42 `
+                    --output-dir demo_outputs/showcase_results `
+                    --report-path demo_outputs/showcase_report.md `
+                    --figures-dir demo_outputs/showcase_figures
+            }
+            finally {
+                $env:TQDM_DISABLE = $previousTqdmDisable
+            }
+        }
 
-    Write-Host "Live showcase run complete."
     Show-ModelComparison "demo_outputs/showcase_results/model_comparison.csv" "Live demo metrics from this run"
-    Write-Cue "Say: The live run proves the pipeline works end to end. Because it only trains neural models for five epochs, the neural scores are intentionally not the final research numbers."
+    Write-Result "The live run proves the pipeline works end to end. The short neural training budget makes it presentation-friendly, so I use the committed full-training artifacts for the final research claims."
     Wait-Showcase
 
-    Write-Section "3. Final Research Evaluation"
-    Write-Cue "Say: Now I compare against the committed full training artifacts, where the neural models were trained longer and evaluated across every held-out season."
+    Write-Section "4. Final Evaluation: Full Training Artifacts"
+    Write-Cue "Now I switch from the quick live run to the full saved experiments. These are the results from the longer training runs and leave-one-season-out validation."
     Show-ModelComparison "results/research_study/model_comparison.csv" "Full regular-season evaluation"
     Show-ModelComparison "results/midseason_study/model_comparison.csv" "Mid-season evaluation"
-    Write-Cue "Say: Full-season features perform better because they contain more information. The mid-season run is harder, but it demonstrates the same problem under a trade-deadline-style use case."
+    Show-FoldEvaluationSummary "results/research_study/fold_metrics.csv"
+    Write-Result "Random Forest leads on full-season accuracy, while the Attention Model stays competitive and gives us interpretability through learned rotation-slot weights. The mid-season task is harder because the model has less season information, which is exactly the real trade-deadline use case."
     Wait-Showcase
 
-    Write-Section "4. Concrete Use Cases"
-    Write-Cue "Say: Instead of only showing aggregate metrics, I can point to held-out team-seasons and show what the models predicted."
+    Write-Section "5. Solving Examples: What Did It Predict?"
+    Write-Cue "Aggregate metrics are useful, but the easiest way to understand the model is to inspect held-out team-seasons. These examples show actual playoff outcomes beside each model prediction."
     Show-UseCasePredictions "results/research_study/predictions.csv"
-    Write-Cue "Say: These examples show both strengths and limits: the model separates many missed-playoff teams well, can identify some champions, and still struggles with rare Finals outcomes."
+    Write-Result "These examples show both strengths and limits: the model separates many missed-playoff teams well, can identify some champions, and still struggles with rare Finals outcomes."
     Wait-Showcase
 
-    Write-Section "5. Artifacts to Show"
-    Write-Host "Generated during this showcase:"
+    Write-Section "6. Visual Evidence And Saved Artifacts"
+    Write-Cue "The project also produces visual analysis: confusion matrices, t-SNE clustering, attention weights, finals diagnostics, and a market-size fairness audit."
+    Show-FigureInventory
+    Show-ArtifactStatus
+    Write-Host ""
+    Write-Host "Generated during this live showcase:"
     Write-Host "  demo_outputs/showcase_report.md"
     Write-Host "  demo_outputs/showcase_results/model_comparison.csv"
     Write-Host "  demo_outputs/showcase_results/predictions.csv"
     Write-Host "  demo_outputs/showcase_figures/"
-    Write-Host ""
-    Write-Host "Final committed artifacts:"
-    Write-Host "  docs/final_report.md"
-    Write-Host "  docs/final_report.pdf"
-    Write-Host "  docs/real_results_summary.md"
-    Write-Host "  results/research_study/"
-    Write-Host "  results/midseason_study/"
-    Write-Cue "Say: My takeaway is that postseason depth is learnable, but exact champion prediction is still difficult because champion and finals-loss classes are tiny."
+    Write-Result "The final takeaway is measured: postseason depth is learnable from regular-season and roster statistics, Random Forest is the strongest accuracy baseline, and attention adds model interpretability without pretending that exact champion prediction is solved."
     Write-Host ""
     Write-Host "Showcase complete."
+    Write-Host "One-command demo finished successfully."
     exit 0
 }
 

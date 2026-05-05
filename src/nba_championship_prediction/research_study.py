@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -340,7 +341,8 @@ def run_neural_models(
     attention_proba = np.zeros((len(y), 6), dtype=np.float32)
     all_attention_weights = np.zeros((len(y), NUM_ROTATION_PLAYERS), dtype=np.float32)
 
-    for fold_index, test_season in enumerate(tqdm(unique_seasons, desc="Neural CV")):
+    disable_progress = os.environ.get("TQDM_DISABLE") == "1"
+    for fold_index, test_season in enumerate(tqdm(unique_seasons, desc="Neural CV", disable=disable_progress)):
         train_mask = seasons_array != test_season
         test_mask = seasons_array == test_season
 

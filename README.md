@@ -176,13 +176,25 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run_project.ps1 demo
 ```
 
-Presentation showcase with built-in talk cues and pauses:
+Presentation showcase with built-in narration, testing, evaluation, and prediction examples:
 
 ```powershell
 .\run_project.ps1 showcase
 ```
 
-Optional unattended showcase run:
+One-command version for execution-policy-restricted Windows terminals:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_project.ps1 showcase
+```
+
+Optional manual step-through mode if you want to pause between sections:
+
+```powershell
+.\run_project.ps1 showcase -Pause
+```
+
+Optional no-delay run:
 
 ```powershell
 .\run_project.ps1 showcase -NoPause
