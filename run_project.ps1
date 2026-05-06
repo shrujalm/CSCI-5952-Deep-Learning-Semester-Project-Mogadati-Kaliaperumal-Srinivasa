@@ -20,28 +20,25 @@ function Write-Section {
     Write-Host "============================================================"
 }
 
-function Write-Cue {
+function Write-ShowcaseText {
     param([string]$Text)
 
     Write-Host ""
-    Write-Host "What to say:"
-    Write-Host "  $Text"
+    Write-Host $Text
 }
 
 function Write-Story {
     param([string]$Text)
 
     Write-Host ""
-    Write-Host "What is happening:"
-    Write-Host "  $Text"
+    Write-Host $Text
 }
 
 function Write-Result {
     param([string]$Text)
 
     Write-Host ""
-    Write-Host "What this proves:"
-    Write-Host "  $Text"
+    Write-Host $Text
 }
 
 function Wait-Showcase {
@@ -314,7 +311,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 
 if ($Mode -eq "showcase") {
     Write-Section "0. Environment Setup"
-    Write-Cue "I am starting with the same command a reviewer can run. The script sets up the environment, runs checks, evaluates models, and prints the results on screen."
+    Write-ShowcaseText "I am starting with the same command a reviewer can run. The script sets up the environment, runs checks, evaluates models, and prints the results on screen."
     Write-Story "Checking Python, the virtual environment, and the required packages before the project code runs."
 }
 
@@ -371,11 +368,11 @@ if ($Mode -eq "showcase") {
 
 if ($Mode -eq "showcase") {
     Write-Section "Showcase Mode: Testing, Evaluation, and Prediction"
-    Write-Cue "This project predicts how far NBA teams go in the playoffs using regular-season team stats and top-eight rotation player features. I am going to show testing, a live evaluation run, final research metrics, and concrete team-season predictions."
+    Write-ShowcaseText "This project predicts how far NBA teams go in the playoffs using regular-season team stats and top-eight rotation player features. I am going to show testing, a live evaluation run, final research metrics, and concrete team-season predictions."
     Wait-Showcase
 
     Write-Section "1. Testing: Does The Project Execute?"
-    Write-Cue "Before I trust any metrics, I first test that the runner parses and the Python package compiles. This is the quick sanity check that catches broken scripts before we talk about model quality."
+    Write-ShowcaseText "Before I trust any metrics, I first test that the runner parses and the Python package compiles. This is the quick sanity check that catches broken scripts before we talk about model quality."
     Invoke-ShowcaseCommand `
         -Description "Validating the PowerShell runner syntax so the one-click demo itself is testable." `
         -CommandText 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Command .\run_project.ps1 -Syntax"' `
@@ -388,13 +385,13 @@ if ($Mode -eq "showcase") {
     Wait-Showcase
 
     Write-Section "2. Problem Setup: What Are We Solving?"
-    Write-Cue "The model is not guessing one champion from vibes. It sees one row per team-season, learns from engineered team and rotation features, and predicts one of six playoff-depth labels."
+    Write-ShowcaseText "The model is not guessing one champion from vibes. It sees one row per team-season, learns from engineered team and rotation features, and predicts one of six playoff-depth labels."
     Show-DataSnapshot "data/processed/features_research.csv" "Full-season dataset snapshot"
     Write-Result "This shows the hard part of the problem: the dataset is real but small, and rare outcomes like Champion and Finals Loss are heavily imbalanced."
     Wait-Showcase
 
     Write-Section "3. Live Evaluation: Run The Pipeline"
-    Write-Cue "Now I run the actual evaluation pipeline in a short showcase configuration. The neural models use only five epochs so the demo finishes live, but the pipeline still rebuilds data artifacts, trains models, evaluates them, and writes outputs."
+    Write-ShowcaseText "Now I run the actual evaluation pipeline in a short showcase configuration. The neural models use only five epochs so the demo finishes live, but the pipeline still rebuilds data artifacts, trains models, evaluates them, and writes outputs."
     Invoke-ShowcaseCommand `
         -Description "Running the research pipeline end to end with a short training budget for screen-share timing." `
         -CommandText "python run_research_study.py --epochs-mlp 5 --epochs-attention 5 --lr 0.001 --seed 42 --output-dir demo_outputs/showcase_results --report-path demo_outputs/showcase_report.md --figures-dir demo_outputs/showcase_figures" `
@@ -421,7 +418,7 @@ if ($Mode -eq "showcase") {
     Wait-Showcase
 
     Write-Section "4. Final Evaluation: Full Training Artifacts"
-    Write-Cue "Now I switch from the quick live run to the full saved experiments. These are the results from the longer training runs and leave-one-season-out validation."
+    Write-ShowcaseText "Now I switch from the quick live run to the full saved experiments. These are the results from the longer training runs and leave-one-season-out validation."
     Show-ModelComparison "results/research_study/model_comparison.csv" "Full regular-season evaluation"
     Show-ModelComparison "results/midseason_study/model_comparison.csv" "Mid-season evaluation"
     Show-FoldEvaluationSummary "results/research_study/fold_metrics.csv"
@@ -429,13 +426,13 @@ if ($Mode -eq "showcase") {
     Wait-Showcase
 
     Write-Section "5. Solving Examples: What Did It Predict?"
-    Write-Cue "Aggregate metrics are useful, but the easiest way to understand the model is to inspect held-out team-seasons. These examples show actual playoff outcomes beside each model prediction."
+    Write-ShowcaseText "Aggregate metrics are useful, but the easiest way to understand the model is to inspect held-out team-seasons. These examples show actual playoff outcomes beside each model prediction."
     Show-UseCasePredictions "results/research_study/predictions.csv"
     Write-Result "These examples show both strengths and limits: the model separates many missed-playoff teams well, can identify some champions, and still struggles with rare Finals outcomes."
     Wait-Showcase
 
     Write-Section "6. Visual Evidence And Saved Artifacts"
-    Write-Cue "The project also produces visual analysis: confusion matrices, t-SNE clustering, attention weights, finals diagnostics, and a market-size fairness audit."
+    Write-ShowcaseText "The project also produces visual analysis: confusion matrices, t-SNE clustering, attention weights, finals diagnostics, and a market-size fairness audit."
     Show-FigureInventory
     Show-ArtifactStatus
     Write-Host ""
