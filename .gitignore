@@ -18,3 +18,4 @@ outputs/
 
 # Local presentation exports; keep repo focused on code, data, results, and reports.
 *.pptx
+*.mp4
