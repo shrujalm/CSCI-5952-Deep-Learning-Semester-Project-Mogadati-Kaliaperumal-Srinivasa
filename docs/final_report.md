@@ -4,6 +4,7 @@ Predicting NBA Postseason Depth from Regular-Season Team and Rotation Statistics
 
 Pranav Kumar Kaliaperumal, Shrujal Mogadati, and Disha Srinivasa
 Department of Computer Science, University of Colorado Denver, Denver, CO 80217 USA
+Project repository: [GitHub repository](https://github.com/shrujalm/CSCI-5952-Deep-Learning-Semester-Project-Mogadati-Kaliaperumal-Srinivasa)
 
 *Keywords*: NBA, sports analytics, deep learning, attention mechanism, player embeddings, postseason prediction, class imbalance, machine learning
 

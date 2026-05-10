@@ -40,16 +40,29 @@ def escape_latex(text: str) -> str:
     return "".join(LATEX_SPECIALS.get(char, char) for char in text)
 
 
+def render_non_code_inline(text: str) -> str:
+    """Render inline Markdown that is outside code spans."""
+
+    parts: list[str] = []
+    cursor = 0
+    for match in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", text):
+        parts.append(escape_latex(text[cursor : match.start()]))
+        parts.append(r"\href{" + match.group(2) + "}{" + escape_latex(match.group(1)) + "}")
+        cursor = match.end()
+    parts.append(escape_latex(text[cursor:]))
+    return "".join(parts)
+
+
 def render_inline(text: str) -> str:
     """Render simple inline Markdown used by the report."""
 
     parts: list[str] = []
     cursor = 0
     for match in re.finditer(r"`([^`]+)`", text):
-        parts.append(escape_latex(text[cursor : match.start()]))
+        parts.append(render_non_code_inline(text[cursor : match.start()]))
         parts.append(r"\texttt{" + escape_latex(match.group(1)) + "}")
         cursor = match.end()
-    parts.append(escape_latex(text[cursor:]))
+    parts.append(render_non_code_inline(text[cursor:]))
     rendered = "".join(parts)
     rendered = re.sub(r"\*([^*]+)\*", r"\\textit{\1}", rendered)
     return rendered
